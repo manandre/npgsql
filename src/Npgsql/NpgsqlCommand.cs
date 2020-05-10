@@ -969,6 +969,7 @@ GROUP BY pg_proc.proargnames, pg_proc.proargtypes, pg_proc.proallargtypes, pg_pr
                     .Populate(StatementOrPortal.Statement, pStatement.Name)
                     .Write(buf, async);
 
+                await Task.Delay(TimeSpan.FromMilliseconds(1));
                 pStatement.State = PreparedState.BeingPrepared;
             }
             await SyncMessage.Instance.Write(buf, async);
