@@ -1238,5 +1238,19 @@ CREATE TEMP TABLE ""OrganisatieQmo_Organisatie_QueryModelObjects_Imp""
                 conn.ExecuteNonQuery("DROP FUNCTION IF EXISTS f_test()");
             }
         }
+
+        [Test, IssueLink("https://github.com/npgsql/npgsql/issues/2635")]
+        public async Task QueryWithMoreThan73707Characters()
+        {
+            const int queryLength = 73707;
+            var template = "select '{0}';";
+            var sql = string.Format(template, new string('A', (queryLength - template.Length) + 3)); // +3 for the '{0}'.
+
+            using var conn = OpenConnection();
+            using var command = conn.CreateCommand();
+            command.CommandText = sql;
+            await command.PrepareAsync();
+            await command.ExecuteNonQueryAsync();
+        }
     }
 }
