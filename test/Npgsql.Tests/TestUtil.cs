@@ -21,14 +21,19 @@ public static class TestUtil
     public const string DefaultConnectionString =
         "Server=localhost;Username=npgsql_tests;Password=npgsql_tests;Database=npgsql_tests;Timeout=0;Command Timeout=0;SSL Mode=Disable";
 
+    internal static string? EnvironmentConnectionString = Environment.GetEnvironmentVariable("NPGSQL_TEST_DB");
+    internal static string? TestContainerConnectionString;
+
     /// <summary>
     /// The connection string that will be used when opening the connection to the tests database.
     /// May be overridden in fixtures, e.g. to set special connection parameters
     /// </summary>
-    public static string ConnectionString { get; }
-        = Environment.GetEnvironmentVariable("NPGSQL_TEST_DB") ?? DefaultConnectionString;
+    public static string ConnectionString
+        => EnvironmentConnectionString
+        ?? TestContainerConnectionString
+        ?? DefaultConnectionString;
 
-    public static bool IsOnBuildServer =>
+    public static bool IsOnBuildServer =
         Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != null ||
         Environment.GetEnvironmentVariable("CI") != null;
 

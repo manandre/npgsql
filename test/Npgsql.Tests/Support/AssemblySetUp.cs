@@ -11,7 +11,7 @@ using Testcontainers.PostgreSql;
 [SetUpFixture]
 public class AssemblySetUp
 {
-    PostgreSqlContainer? _postgreSqlContainer = default;
+    static PostgreSqlContainer? _postgreSqlContainer = default;
 
     [OneTimeSetUp]
     public async Task Setup()
@@ -26,12 +26,13 @@ public class AssemblySetUp
         {
             var connectionString = new NpgsqlConnectionStringBuilder(TestUtil.DefaultConnectionString);
             _postgreSqlContainer = new PostgreSqlBuilder()
-                .WithPortBinding(connectionString.Port)
                 .WithDatabase(connectionString.Database)
                 .WithUsername(connectionString.Username)
                 .WithPassword(connectionString.Password)
                 .Build();
             await _postgreSqlContainer.StartAsync();
+            connectionString.Port = _postgreSqlContainer.GetMappedPublicPort(connectionString.Port);
+            TestUtil.TestContainerConnectionString = connectionString.ToString();
         }
         catch (PostgresException e)
         {
