@@ -1,18 +1,13 @@
-﻿using Microsoft.Extensions.Logging;
-using Npgsql;
+﻿using Npgsql;
 using Npgsql.Tests;
-using Npgsql.Tests.Support;
 using NUnit.Framework;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Testcontainers.PostgreSql;
 
 [SetUpFixture]
 public class AssemblySetUp
 {
-    static PostgreSqlContainer? _postgreSqlContainer = default;
-
     [OneTimeSetUp]
     public async Task Setup()
     {
@@ -24,15 +19,7 @@ public class AssemblySetUp
         }
         catch (NpgsqlException e) when (e.IsTransient)
         {
-            var connectionString = new NpgsqlConnectionStringBuilder(TestUtil.DefaultConnectionString);
-            _postgreSqlContainer = new PostgreSqlBuilder()
-                .WithDatabase(connectionString.Database)
-                .WithUsername(connectionString.Username)
-                .WithPassword(connectionString.Password)
-                .Build();
-            await _postgreSqlContainer.StartAsync();
-            connectionString.Port = _postgreSqlContainer.GetMappedPublicPort(connectionString.Port);
-            TestUtil.TestContainerConnectionString = connectionString.ToString();
+            await TestContainer.Setup();
         }
         catch (PostgresException e)
         {
@@ -63,9 +50,5 @@ public class AssemblySetUp
     }
 
     [OneTimeTearDown]
-    public async Task TearDown()
-    {
-        if (_postgreSqlContainer is not null)
-            await _postgreSqlContainer.DisposeAsync();
-    }
+    public Task TearDown() => TestContainer.TearDown();
 }

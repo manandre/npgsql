@@ -22,7 +22,6 @@ public static class TestUtil
         "Server=localhost;Username=npgsql_tests;Password=npgsql_tests;Database=npgsql_tests;Timeout=0;Command Timeout=0;SSL Mode=Disable";
 
     internal static string? EnvironmentConnectionString = Environment.GetEnvironmentVariable("NPGSQL_TEST_DB");
-    internal static string? TestContainerConnectionString;
 
     /// <summary>
     /// The connection string that will be used when opening the connection to the tests database.
@@ -30,7 +29,7 @@ public static class TestUtil
     /// </summary>
     public static string ConnectionString
         => EnvironmentConnectionString
-        ?? TestContainerConnectionString
+        ?? TestContainer.ConnectionString
         ?? DefaultConnectionString;
 
     public static bool IsOnBuildServer =
