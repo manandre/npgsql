@@ -7,7 +7,7 @@ services:
     volumes:
       - ..:/workspace:cached
     tty: true
-    network_mode: host
+    network_mode: service:db
 
   db:
     build: ./db
@@ -15,8 +15,6 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - ./db/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
-    ports: 
-      - 5432:5432
 
   pgadmin:
     image: dpage/pgadmin4
