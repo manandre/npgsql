@@ -33,5 +33,7 @@
 
   "remoteEnv": {
     "DeveloperBuild": "True"
-  }
+  },
+
+  "postCreateCommand": "dotnet build Npgsql.sln"
 }
