@@ -7,6 +7,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
+#pragma warning disable CS0436 // Type conflicts with imported type
+
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -240,8 +242,8 @@ public static partial class NpgsqlServiceCollectionExtensions
                 typeof(NpgsqlDataSource),
                 sp =>
                 {
-                    var connectionString = sp.GetService<IOptionsSnapshot<NpgsqlConnectionStringBuilder>>()?.Value.ConnectionString;
-                    var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
+                    var connectionStringBuilder = sp.GetRequiredService<IOptionsSnapshot<NpgsqlConnectionStringBuilder>>().Value;
+                    var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionStringBuilder);
                     dataSourceBuilder.UseLoggerFactory(sp.GetService<ILoggerFactory>());
                     dataSourceBuilderAction?.Invoke(dataSourceBuilder);
                     return dataSourceBuilder.Build();
@@ -270,8 +272,8 @@ public static partial class NpgsqlServiceCollectionExtensions
                 typeof(NpgsqlDataSource),
                 sp =>
                 {
-                    var connectionString = sp.GetService<IOptionsSnapshot<NpgsqlConnectionStringBuilder>>()?.Value.ConnectionString;
-                    var dataSourceBuilder = new NpgsqlSlimDataSourceBuilder(connectionString);
+                    var connectionStringBuilder = sp.GetRequiredService<IOptionsSnapshot<NpgsqlConnectionStringBuilder>>().Value;
+                    var dataSourceBuilder = new NpgsqlSlimDataSourceBuilder(connectionStringBuilder);
                     configuration?.Bind(dataSourceBuilder.ConnectionStringBuilder);
                     dataSourceBuilder.UseLoggerFactory(sp.GetService<ILoggerFactory>());
                     dataSourceBuilderAction?.Invoke(dataSourceBuilder);
@@ -301,8 +303,8 @@ public static partial class NpgsqlServiceCollectionExtensions
                 typeof(NpgsqlMultiHostDataSource),
                 sp =>
                 {
-                    var connectionString = sp.GetService<IOptionsSnapshot<NpgsqlConnectionStringBuilder>>()?.Value.ConnectionString;
-                    var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
+                    var connectionStringBuilder = sp.GetRequiredService<IOptionsSnapshot<NpgsqlConnectionStringBuilder>>().Value;
+                    var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionStringBuilder);
                     configuration?.Bind(dataSourceBuilder.ConnectionStringBuilder);
                     dataSourceBuilder.UseLoggerFactory(sp.GetService<ILoggerFactory>());
                     dataSourceBuilderAction?.Invoke(dataSourceBuilder);
@@ -338,8 +340,8 @@ public static partial class NpgsqlServiceCollectionExtensions
                 typeof(NpgsqlMultiHostDataSource),
                 sp =>
                 {
-                    var connectionString = sp.GetService<IOptionsSnapshot<NpgsqlConnectionStringBuilder>>()?.Value.ConnectionString;
-                    var dataSourceBuilder = new NpgsqlSlimDataSourceBuilder(connectionString);
+                    var connectionStringBuilder = sp.GetRequiredService<IOptionsSnapshot<NpgsqlConnectionStringBuilder>>().Value;
+                    var dataSourceBuilder = new NpgsqlSlimDataSourceBuilder(connectionStringBuilder);
                     configuration?.Bind(dataSourceBuilder.ConnectionStringBuilder);
                     dataSourceBuilder.UseLoggerFactory(sp.GetService<ILoggerFactory>());
                     dataSourceBuilderAction?.Invoke(dataSourceBuilder);

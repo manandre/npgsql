@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Diagnostics.CodeAnalysis;
 
 #pragma warning disable 1591
+#pragma warning disable CS0436 // Type conflicts with imported type
 
 namespace System.Diagnostics.CodeAnalysis
 {
