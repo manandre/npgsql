@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 // ReSharper disable once CheckNamespace
@@ -231,13 +232,16 @@ public static partial class NpgsqlServiceCollectionExtensions
         ServiceLifetime connectionLifetime,
         ServiceLifetime dataSourceLifetime)
     {
+        if (configuration is not null)
+            serviceCollection.Configure<NpgsqlConnectionStringBuilder>(configuration);
+
         serviceCollection.TryAdd(
             new ServiceDescriptor(
                 typeof(NpgsqlDataSource),
                 sp =>
                 {
-                    var dataSourceBuilder = new NpgsqlDataSourceBuilder();
-                    configuration?.Bind(dataSourceBuilder.ConnectionStringBuilder);
+                    var connectionString = sp.GetService<IOptionsSnapshot<NpgsqlConnectionStringBuilder>>()?.Value.ConnectionString;
+                    var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
                     dataSourceBuilder.UseLoggerFactory(sp.GetService<ILoggerFactory>());
                     dataSourceBuilderAction?.Invoke(dataSourceBuilder);
                     return dataSourceBuilder.Build();
@@ -258,12 +262,16 @@ public static partial class NpgsqlServiceCollectionExtensions
         ServiceLifetime connectionLifetime,
         ServiceLifetime dataSourceLifetime)
     {
+        if (configuration is not null)
+            serviceCollection.Configure<NpgsqlConnectionStringBuilder>(configuration);
+
         serviceCollection.TryAdd(
             new ServiceDescriptor(
                 typeof(NpgsqlDataSource),
                 sp =>
                 {
-                    var dataSourceBuilder = new NpgsqlSlimDataSourceBuilder();
+                    var connectionString = sp.GetService<IOptionsSnapshot<NpgsqlConnectionStringBuilder>>()?.Value.ConnectionString;
+                    var dataSourceBuilder = new NpgsqlSlimDataSourceBuilder(connectionString);
                     configuration?.Bind(dataSourceBuilder.ConnectionStringBuilder);
                     dataSourceBuilder.UseLoggerFactory(sp.GetService<ILoggerFactory>());
                     dataSourceBuilderAction?.Invoke(dataSourceBuilder);
@@ -285,12 +293,16 @@ public static partial class NpgsqlServiceCollectionExtensions
         ServiceLifetime connectionLifetime,
         ServiceLifetime dataSourceLifetime)
     {
+        if (configuration is not null)
+            serviceCollection.Configure<NpgsqlConnectionStringBuilder>(configuration);
+
         serviceCollection.TryAdd(
             new ServiceDescriptor(
                 typeof(NpgsqlMultiHostDataSource),
                 sp =>
                 {
-                    var dataSourceBuilder = new NpgsqlDataSourceBuilder();
+                    var connectionString = sp.GetService<IOptionsSnapshot<NpgsqlConnectionStringBuilder>>()?.Value.ConnectionString;
+                    var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
                     configuration?.Bind(dataSourceBuilder.ConnectionStringBuilder);
                     dataSourceBuilder.UseLoggerFactory(sp.GetService<ILoggerFactory>());
                     dataSourceBuilderAction?.Invoke(dataSourceBuilder);
@@ -318,12 +330,16 @@ public static partial class NpgsqlServiceCollectionExtensions
         ServiceLifetime connectionLifetime,
         ServiceLifetime dataSourceLifetime)
     {
+        if (configuration is not null)
+            serviceCollection.Configure<NpgsqlConnectionStringBuilder>(configuration);
+
         serviceCollection.TryAdd(
             new ServiceDescriptor(
                 typeof(NpgsqlMultiHostDataSource),
                 sp =>
                 {
-                    var dataSourceBuilder = new NpgsqlSlimDataSourceBuilder();
+                    var connectionString = sp.GetService<IOptionsSnapshot<NpgsqlConnectionStringBuilder>>()?.Value.ConnectionString;
+                    var dataSourceBuilder = new NpgsqlSlimDataSourceBuilder(connectionString);
                     configuration?.Bind(dataSourceBuilder.ConnectionStringBuilder);
                     dataSourceBuilder.UseLoggerFactory(sp.GetService<ILoggerFactory>());
                     dataSourceBuilderAction?.Invoke(dataSourceBuilder);
