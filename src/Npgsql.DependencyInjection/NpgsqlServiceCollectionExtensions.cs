@@ -210,23 +210,12 @@ public static class NpgsqlServiceCollectionExtensions
         Action<NpgsqlDataSourceBuilder>? dataSourceBuilderAction,
         ServiceLifetime connectionLifetime,
         ServiceLifetime dataSourceLifetime)
-    {
-        serviceCollection.TryAdd(
-            new ServiceDescriptor(
-                typeof(NpgsqlDataSource),
-                sp =>
-                {
-                    var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
-                    dataSourceBuilder.UseLoggerFactory(sp.GetService<ILoggerFactory>());
-                    dataSourceBuilderAction?.Invoke(dataSourceBuilder);
-                    return dataSourceBuilder.Build();
-                },
-                dataSourceLifetime));
-
-        AddCommonServices(serviceCollection, connectionLifetime, dataSourceLifetime);
-
-        return serviceCollection;
-    }
+        => AddNpgsqlDataSourceCore(
+            serviceCollection,
+            new NpgsqlDataSourceBuilder(connectionString),
+            dataSourceBuilderAction,
+            connectionLifetime,
+            dataSourceLifetime);
 
     static IServiceCollection AddNpgsqlSlimDataSourceCore(
         this IServiceCollection serviceCollection,
@@ -234,23 +223,26 @@ public static class NpgsqlServiceCollectionExtensions
         Action<NpgsqlSlimDataSourceBuilder>? dataSourceBuilderAction,
         ServiceLifetime connectionLifetime,
         ServiceLifetime dataSourceLifetime)
-    {
-        serviceCollection.TryAdd(
-            new ServiceDescriptor(
-                typeof(NpgsqlDataSource),
-                sp =>
-                {
-                    var dataSourceBuilder = new NpgsqlSlimDataSourceBuilder(connectionString);
-                    dataSourceBuilder.UseLoggerFactory(sp.GetService<ILoggerFactory>());
-                    dataSourceBuilderAction?.Invoke(dataSourceBuilder);
-                    return dataSourceBuilder.Build();
-                },
-                dataSourceLifetime));
+        => AddNpgsqlDataSourceCore(
+            serviceCollection,
+            new NpgsqlSlimDataSourceBuilder(connectionString),
+            dataSourceBuilderAction,
+            connectionLifetime,
+            dataSourceLifetime);
 
-        AddCommonServices(serviceCollection, connectionLifetime, dataSourceLifetime);
-
-        return serviceCollection;
-    }
+    static IServiceCollection AddNpgsqlDataSourceCore<TBuilder>(
+        this IServiceCollection serviceCollection,
+        TBuilder dataSourceBuilder,
+        Action<TBuilder>? dataSourceBuilderAction,
+        ServiceLifetime connectionLifetime,
+        ServiceLifetime dataSourceLifetime)
+        where TBuilder : INpgsqlDataSourceBuilder<TBuilder>
+        => AddNpgsqlDataSourceCore<TBuilder, NpgsqlDataSource>(
+            serviceCollection,
+            dataSourceBuilder,
+            dataSourceBuilderAction,
+            connectionLifetime,
+            dataSourceLifetime);
 
     static IServiceCollection AddMultiHostNpgsqlDataSourceCore(
         this IServiceCollection serviceCollection,
@@ -258,29 +250,12 @@ public static class NpgsqlServiceCollectionExtensions
         Action<NpgsqlDataSourceBuilder>? dataSourceBuilderAction,
         ServiceLifetime connectionLifetime,
         ServiceLifetime dataSourceLifetime)
-    {
-        serviceCollection.TryAdd(
-            new ServiceDescriptor(
-                typeof(NpgsqlMultiHostDataSource),
-                sp =>
-                {
-                    var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
-                    dataSourceBuilder.UseLoggerFactory(sp.GetService<ILoggerFactory>());
-                    dataSourceBuilderAction?.Invoke(dataSourceBuilder);
-                    return dataSourceBuilder.BuildMultiHost();
-                },
-                dataSourceLifetime));
-
-        serviceCollection.TryAdd(
-            new ServiceDescriptor(
-                typeof(NpgsqlDataSource),
-                sp => sp.GetRequiredService<NpgsqlMultiHostDataSource>(),
-                dataSourceLifetime));
-
-        AddCommonServices(serviceCollection, connectionLifetime, dataSourceLifetime);
-
-        return serviceCollection;
-    }
+        => AddNpgsqlMultiHostDataSourceCore(
+            serviceCollection,
+            new NpgsqlDataSourceBuilder(connectionString),
+            dataSourceBuilderAction,
+            connectionLifetime,
+            dataSourceLifetime);
 
     static IServiceCollection AddMultiHostNpgsqlSlimDataSourceCore(
         this IServiceCollection serviceCollection,
@@ -288,24 +263,57 @@ public static class NpgsqlServiceCollectionExtensions
         Action<NpgsqlSlimDataSourceBuilder>? dataSourceBuilderAction,
         ServiceLifetime connectionLifetime,
         ServiceLifetime dataSourceLifetime)
+        => AddNpgsqlMultiHostDataSourceCore(
+            serviceCollection,
+            new NpgsqlSlimDataSourceBuilder(connectionString),
+            dataSourceBuilderAction,
+            connectionLifetime,
+            dataSourceLifetime);
+
+    static IServiceCollection AddNpgsqlMultiHostDataSourceCore<TBuilder>(
+        this IServiceCollection serviceCollection,
+        TBuilder dataSourceBuilder,
+        Action<TBuilder>? dataSourceBuilderAction,
+        ServiceLifetime connectionLifetime,
+        ServiceLifetime dataSourceLifetime)
+        where TBuilder : INpgsqlDataSourceBuilder<TBuilder>
+        => AddNpgsqlDataSourceCore<TBuilder, NpgsqlMultiHostDataSource>(
+            serviceCollection,
+            dataSourceBuilder,
+            dataSourceBuilderAction,
+            connectionLifetime,
+            dataSourceLifetime);
+
+    static IServiceCollection AddNpgsqlDataSourceCore<TBuilder, TDataSource>(
+        this IServiceCollection serviceCollection,
+        TBuilder dataSourceBuilder,
+        Action<TBuilder>? dataSourceBuilderAction,
+        ServiceLifetime connectionLifetime,
+        ServiceLifetime dataSourceLifetime)
+        where TBuilder: INpgsqlDataSourceBuilder<TBuilder>
+        where TDataSource: NpgsqlDataSource
     {
         serviceCollection.TryAdd(
             new ServiceDescriptor(
-                typeof(NpgsqlMultiHostDataSource),
+                typeof(TDataSource),
                 sp =>
                 {
-                    var dataSourceBuilder = new NpgsqlSlimDataSourceBuilder(connectionString);
                     dataSourceBuilder.UseLoggerFactory(sp.GetService<ILoggerFactory>());
                     dataSourceBuilderAction?.Invoke(dataSourceBuilder);
-                    return dataSourceBuilder.BuildMultiHost();
+                    return typeof(TDataSource).IsAssignableFrom(typeof(NpgsqlMultiHostDataSource))
+                        ? dataSourceBuilder.BuildMultiHost()
+                        : dataSourceBuilder.Build();
                 },
                 dataSourceLifetime));
 
-        serviceCollection.TryAdd(
-            new ServiceDescriptor(
-                typeof(NpgsqlDataSource),
-                sp => sp.GetRequiredService<NpgsqlMultiHostDataSource>(),
-                dataSourceLifetime));
+        if (typeof(TDataSource).IsSubclassOf(typeof(NpgsqlDataSource)))
+        {
+            serviceCollection.TryAdd(
+                new ServiceDescriptor(
+                    typeof(NpgsqlDataSource),
+                    sp => sp.GetRequiredService<TDataSource>(),
+                    dataSourceLifetime));
+        }
 
         AddCommonServices(serviceCollection, connectionLifetime, dataSourceLifetime);
 

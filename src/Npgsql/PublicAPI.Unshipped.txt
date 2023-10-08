@@ -1,9 +1,22 @@
-﻿#nullable enable
+#nullable enable
 const Npgsql.PostgresErrorCodes.IdleSessionTimeout = "57P05" -> string!
 Npgsql.ChannelBinding
 Npgsql.ChannelBinding.Disable = 0 -> Npgsql.ChannelBinding
 Npgsql.ChannelBinding.Prefer = 1 -> Npgsql.ChannelBinding
 Npgsql.ChannelBinding.Require = 2 -> Npgsql.ChannelBinding
+Npgsql.INpgsqlDataSourceBuilder<T>
+Npgsql.INpgsqlDataSourceBuilder<T>.Build() -> Npgsql.NpgsqlDataSource!
+Npgsql.INpgsqlDataSourceBuilder<T>.BuildMultiHost() -> Npgsql.NpgsqlMultiHostDataSource!
+Npgsql.INpgsqlDataSourceBuilder<T>.EnableParameterLogging(bool parameterLoggingEnabled = true) -> T
+Npgsql.INpgsqlDataSourceBuilder<T>.UseClientCertificate(System.Security.Cryptography.X509Certificates.X509Certificate? clientCertificate) -> T
+Npgsql.INpgsqlDataSourceBuilder<T>.UseClientCertificates(System.Security.Cryptography.X509Certificates.X509CertificateCollection? clientCertificates) -> T
+Npgsql.INpgsqlDataSourceBuilder<T>.UseClientCertificatesCallback(System.Action<System.Security.Cryptography.X509Certificates.X509CertificateCollection!>? clientCertificatesCallback) -> T
+Npgsql.INpgsqlDataSourceBuilder<T>.UseLoggerFactory(Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory) -> T
+Npgsql.INpgsqlDataSourceBuilder<T>.UsePeriodicPasswordProvider(System.Func<Npgsql.NpgsqlConnectionStringBuilder!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<string!>>? passwordProvider, System.TimeSpan successRefreshInterval, System.TimeSpan failureRefreshInterval) -> T
+Npgsql.INpgsqlDataSourceBuilder<T>.UsePhysicalConnectionInitializer(System.Action<Npgsql.NpgsqlConnection!>? connectionInitializer, System.Func<Npgsql.NpgsqlConnection!, System.Threading.Tasks.Task!>? connectionInitializerAsync) -> T
+Npgsql.INpgsqlDataSourceBuilder<T>.UseRootCertificate(System.Security.Cryptography.X509Certificates.X509Certificate2? rootCertificate) -> T
+Npgsql.INpgsqlDataSourceBuilder<T>.UseRootCertificateCallback(System.Func<System.Security.Cryptography.X509Certificates.X509Certificate2!>? rootCertificateCallback) -> T
+Npgsql.INpgsqlDataSourceBuilder<T>.UseUserCertificateValidationCallback(System.Net.Security.RemoteCertificateValidationCallback! userCertificateValidationCallback) -> T
 Npgsql.INpgsqlTypeMapperExtensions
 Npgsql.NpgsqlBatch.CreateBatchCommand() -> Npgsql.NpgsqlBatchCommand!
 Npgsql.NpgsqlConnectionStringBuilder.ChannelBinding.get -> Npgsql.ChannelBinding
