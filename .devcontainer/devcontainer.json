@@ -3,6 +3,10 @@
   "dockerComposeFile": "docker-compose.yml",
   "service": "npgsql-dev",
   "features": {
+    "ghcr.io/devcontainers/features/dotnet:2": {
+        "version": "9.0",
+        "dotnetRuntimeVersions": "latest, lts"
+    },
     "ghcr.io/devcontainers/features/sshd:1": {
         "version": "latest"
     }
