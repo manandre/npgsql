@@ -27,12 +27,8 @@
         ]
     }
   },
-  
+
   "forwardPorts": [5432, 5050],
 
-  "remoteEnv": {
-    "DeveloperBuild": "True"
-  },
-
-  "postCreateCommand": "dotnet restore Npgsql.sln"
+  "postCreateCommand": "dotnet restore Npgsql.slnx"
 }
