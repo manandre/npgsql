@@ -1178,6 +1178,82 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
             Assert.That(activity.TagObjects.Any(x => x.Key == "db.connection_id"));
     }
 
+    [Test]
+    public async Task Basic_raw_copy_tracing([Values] bool async)
+    {
+        if (IsMultiplexing && !async)
+            return;
+
+        var activities = new List<Activity>();
+
+        using var activityListener = new ActivityListener();
+        activityListener.ShouldListenTo = source => source.Name == "Npgsql";
+        activityListener.Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded;
+        activityListener.ActivityStopped = activity => activities.Add(activity);
+        ActivitySource.AddActivityListener(activityListener);
+
+        await using var dataSource = CreateDataSource(DisablePhysicalOpenTracing);
+        await using var conn = await dataSource.OpenConnectionAsync();
+
+        var table = await CreateTempTable(conn, "field_text TEXT, field_int2 SMALLINT");
+        Assert.That(activities.Count, Is.EqualTo(1));
+        activities.Clear();
+
+        // Insert a row for export
+        await conn.ExecuteNonQueryAsync($"INSERT INTO {table} (field_text, field_int2) VALUES ('Hello', 8)");
+        activities.Clear();
+
+        // Raw binary export
+        var copyToCommand = $"COPY {table} (field_text, field_int2) TO STDIN BINARY";
+        using (var stream = async
+            ? await conn.BeginRawBinaryCopyAsync(copyToCommand)
+            : conn.BeginRawBinaryCopy(copyToCommand))
+        {
+            var buffer = new byte[1024];
+            while (stream.Read(buffer, 0, buffer.Length) > 0) { }
+        }
+
+        Assert.That(activities.Count, Is.EqualTo(1));
+        var activity = activities[0];
+        Assert.That(activity.DisplayName, Is.EqualTo(conn.Settings.Database));
+        Assert.That(activity.OperationName, Is.EqualTo(conn.Settings.Database));
+        Assert.That(activity.Status, Is.EqualTo(ActivityStatusCode.Ok));
+        Assert.That(activity.TagObjects.Any(x => x.Key == "db.rows"), Is.False, "db.rows should not be present for raw copy");
+        Assert.That(activity.TagObjects.Any(x => x.Key == "db.statement" && (string?)x.Value == copyToCommand));
+    }
+
+    [Test]
+    public async Task Error_raw_copy_tracing([Values] bool async)
+    {
+        if (IsMultiplexing && !async)
+            return;
+
+        var activities = new List<Activity>();
+
+        using var activityListener = new ActivityListener();
+        activityListener.ShouldListenTo = source => source.Name == "Npgsql";
+        activityListener.Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded;
+        activityListener.ActivityStopped = activity => activities.Add(activity);
+        ActivitySource.AddActivityListener(activityListener);
+
+        await using var dataSource = CreateDataSource(DisablePhysicalOpenTracing);
+        await using var conn = await dataSource.OpenConnectionAsync();
+
+        var copyFromCommand = $"COPY non_existing_table (field_text, field_int2) FROM STDIN BINARY";
+        Assert.ThrowsAsync<PostgresException>(async () =>
+        {
+            await using var stream = async
+                ? await conn.BeginRawBinaryCopyAsync(copyFromCommand)
+                : conn.BeginRawBinaryCopy(copyFromCommand);
+        });
+
+        Assert.That(activities.Count, Is.EqualTo(1));
+        var activity = activities[0];
+        Assert.That(activity.Status, Is.EqualTo(ActivityStatusCode.Error));
+        Assert.That(activity.TagObjects.Any(x => x.Key == "db.rows"), Is.False, "db.rows should not be present for raw copy");
+        Assert.That(activity.TagObjects.Any(x => x.Key == "db.statement" && (string?)x.Value == copyFromCommand));
+    }
+
     static void DisablePhysicalOpenTracing(NpgsqlDataSourceBuilder dsb) => dsb.ConfigureTracing(tob => tob.EnablePhysicalOpenTracing(false));
 
     async Task<object?> ExecuteScalar(NpgsqlConnection connection, bool async, bool isBatch, string query)

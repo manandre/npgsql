@@ -76,6 +76,8 @@ public sealed class NpgsqlRawCopyStream : Stream, ICancelable
 
     internal async Task Init(string copyCommand, bool async, CancellationToken cancellationToken = default)
     {
+        TraceCopyStart(copyCommand);
+
         try
         {
             await _connector.WriteQuery(copyCommand, async, cancellationToken).ConfigureAwait(false);
@@ -92,14 +94,14 @@ public sealed class NpgsqlRawCopyStream : Stream, ICancelable
                 IsBinary = copyInResponse.IsBinary;
                 _canWrite = true;
                 _writeBuf.StartCopyMode();
-                TraceImportStart(copyCommand);
+                TraceSetImport();
                 break;
             case BackendMessageCode.CopyOutResponse:
                 _state = CopyStreamState.Ready;
                 var copyOutResponse = (CopyOutResponseMessage)msg;
                 IsBinary = copyOutResponse.IsBinary;
                 _canRead = true;
-                TraceExportStart(copyCommand);
+                TraceSetExport();
                 break;
             case BackendMessageCode.CommandComplete:
                 throw new InvalidOperationException(
@@ -478,34 +480,47 @@ public sealed class NpgsqlRawCopyStream : Stream, ICancelable
 
     #region Tracing
 
-    private void TraceImportStart(string copyCommand)
+    private void TraceCopyStart(string copyCommand)
     {
         Debug.Assert(_copyActivity is null);
         if (NpgsqlActivitySource.IsEnabled)
         {
-            _copyActivity = NpgsqlActivitySource.ImportStart(copyCommand, _connector);
+            _copyActivity = NpgsqlActivitySource.CopyStart(copyCommand, _connector);
         }
     }
 
-    private void TraceExportStart(string copyCommand)
+    private void TraceSetImport()
     {
-        Debug.Assert(_copyActivity is null);
-        if (NpgsqlActivitySource.IsEnabled)
+        if (_copyActivity is not null)
         {
-            _copyActivity = NpgsqlActivitySource.ExportStart(copyCommand, _connector);
+            NpgsqlActivitySource.SetImport(_copyActivity);
+        }
+    }
+
+    private void TraceSetExport()
+    {
+        if (_copyActivity is not null)
+        {
+            NpgsqlActivitySource.SetExport(_copyActivity);
         }
     }
 
     private void TraceImportStop()
     {
         if (_copyActivity is not null)
+        {
             NpgsqlActivitySource.ImportStop(_copyActivity);
+            _copyActivity = null;
+        }
     }
 
     private void TraceExportStop()
     {
         if (_copyActivity is not null)
+        {
             NpgsqlActivitySource.ExportStop(_copyActivity);
+            _copyActivity = null;
+        }
     }
 
     private void TraceSetCancelled()
