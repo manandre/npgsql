@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -49,6 +49,8 @@ public sealed class NpgsqlBinaryExporter : ICancelable
         set => _buf.Timeout = value;
     }
 
+    Activity? CurrentActivity;
+
     #endregion
 
     #region Construction / Initialization
@@ -64,39 +66,48 @@ public sealed class NpgsqlBinaryExporter : ICancelable
 
     internal async Task Init(string copyToCommand, bool async, CancellationToken cancellationToken = default)
     {
-        await _connector.WriteQuery(copyToCommand, async, cancellationToken).ConfigureAwait(false);
-        await _connector.Flush(async, cancellationToken).ConfigureAwait(false);
-
-        using var registration = _connector.StartNestedCancellableOperation(cancellationToken, attemptPgCancellation: false);
-
-        CopyOutResponseMessage copyOutResponse;
-        var msg = await _connector.ReadMessage(async).ConfigureAwait(false);
-        switch (msg.Code)
+        TraceExportStart(copyToCommand);
+        try
         {
-        case BackendMessageCode.CopyOutResponse:
-            copyOutResponse = (CopyOutResponseMessage)msg;
-            if (!copyOutResponse.IsBinary)
-            {
-                throw _connector.Break(
-                    new ArgumentException("copyToCommand triggered a text transfer, only binary is allowed",
-                        nameof(copyToCommand)));
-            }
-            break;
-        case BackendMessageCode.CommandComplete:
-            throw new InvalidOperationException(
-                "This API only supports import/export from the client, i.e. COPY commands containing TO/FROM STDIN. " +
-                "To import/export with files on your PostgreSQL machine, simply execute the command with ExecuteNonQuery. " +
-                "Note that your data has been successfully imported/exported.");
-        default:
-            throw _connector.UnexpectedMessageReceived(msg.Code);
-        }
+            await _connector.WriteQuery(copyToCommand, async, cancellationToken).ConfigureAwait(false);
+            await _connector.Flush(async, cancellationToken).ConfigureAwait(false);
 
-        _state = ExporterState.Ready;
-        NumColumns = copyOutResponse.NumColumns;
-        _columnInfoCache = new PgConverterInfo[NumColumns];
-        _rowsExported = 0;
-        _endOfMessagePos = _buf.CumulativeReadPosition;
-        await ReadHeader(async).ConfigureAwait(false);
+            using var registration = _connector.StartNestedCancellableOperation(cancellationToken, attemptPgCancellation: false);
+
+            CopyOutResponseMessage copyOutResponse;
+            var msg = await _connector.ReadMessage(async).ConfigureAwait(false);
+            switch (msg.Code)
+            {
+            case BackendMessageCode.CopyOutResponse:
+                copyOutResponse = (CopyOutResponseMessage)msg;
+                if (!copyOutResponse.IsBinary)
+                {
+                    throw _connector.Break(
+                        new ArgumentException("copyToCommand triggered a text transfer, only binary is allowed",
+                            nameof(copyToCommand)));
+                }
+                break;
+            case BackendMessageCode.CommandComplete:
+                throw new InvalidOperationException(
+                    "This API only supports import/export from the client, i.e. COPY commands containing TO/FROM STDIN. " +
+                    "To import/export with files on your PostgreSQL machine, simply execute the command with ExecuteNonQuery. " +
+                    "Note that your data has been successfully imported/exported.");
+            default:
+                throw _connector.UnexpectedMessageReceived(msg.Code);
+            }
+
+            _state = ExporterState.Ready;
+            NumColumns = copyOutResponse.NumColumns;
+            _columnInfoCache = new PgConverterInfo[NumColumns];
+            _rowsExported = 0;
+            _endOfMessagePos = _buf.CumulativeReadPosition;
+            await ReadHeader(async).ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            TraceSetException(e);
+            throw;
+        }
     }
 
     async Task ReadHeader(bool async)
@@ -476,40 +487,48 @@ public sealed class NpgsqlBinaryExporter : ICancelable
         if (_state == ExporterState.Disposed)
             return;
 
-        if (_state is ExporterState.Consumed or ExporterState.Uninitialized)
+        try
         {
-            LogMessages.BinaryCopyOperationCompleted(_copyLogger, _rowsExported, _connector.Id);
+            if (_state is ExporterState.Consumed or ExporterState.Uninitialized)
+            {
+                LogMessages.BinaryCopyOperationCompleted(_copyLogger, _rowsExported, _connector.Id);
+            }
+            else if (!_connector.IsBroken)
+            {
+                try
+                {
+                    using var registration = _connector.StartNestedCancellableOperation(attemptPgCancellation: false);
+                    // Be sure to commit the reader.
+                    if (async)
+                         await PgReader.CommitAsync().ConfigureAwait(false);
+                    else
+                        PgReader.Commit();
+                    // Finish the current CopyData message
+                    await _buf.Skip(async, checked((int)(_endOfMessagePos - _buf.CumulativeReadPosition))).ConfigureAwait(false);
+                    // Read to the end
+                    _connector.SkipUntil(BackendMessageCode.CopyDone);
+                    // We intentionally do not pass a CancellationToken since we don't want to cancel cleanup
+                    Expect<CommandCompleteMessage>(await _connector.ReadMessage(async).ConfigureAwait(false), _connector);
+                    Expect<ReadyForQueryMessage>(await _connector.ReadMessage(async).ConfigureAwait(false), _connector);
+                }
+                catch (OperationCanceledException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.QueryCanceled })
+                {
+                    LogMessages.CopyOperationCancelled(_copyLogger, _connector.Id);
+                    TraceSetCancelled();
+                }
+                catch (Exception e)
+                {
+                    LogMessages.ExceptionWhenDisposingCopyOperation(_copyLogger, _connector.Id, e);
+                    TraceSetException(e);
+                }
+            }
+            TraceExportStop();
         }
-        else if (!_connector.IsBroken)
+        finally
         {
-            try
-            {
-                using var registration = _connector.StartNestedCancellableOperation(attemptPgCancellation: false);
-                // Be sure to commit the reader.
-                if (async)
-                     await PgReader.CommitAsync().ConfigureAwait(false);
-                else
-                    PgReader.Commit();
-                // Finish the current CopyData message
-                await _buf.Skip(async, checked((int)(_endOfMessagePos - _buf.CumulativeReadPosition))).ConfigureAwait(false);
-                // Read to the end
-                _connector.SkipUntil(BackendMessageCode.CopyDone);
-                // We intentionally do not pass a CancellationToken since we don't want to cancel cleanup
-                Expect<CommandCompleteMessage>(await _connector.ReadMessage(async).ConfigureAwait(false), _connector);
-                Expect<ReadyForQueryMessage>(await _connector.ReadMessage(async).ConfigureAwait(false), _connector);
-            }
-            catch (OperationCanceledException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.QueryCanceled })
-            {
-                LogMessages.CopyOperationCancelled(_copyLogger, _connector.Id);
-            }
-            catch (Exception e)
-            {
-                LogMessages.ExceptionWhenDisposingCopyOperation(_copyLogger, _connector.Id, e);
-            }
+            _connector.EndUserAction();
+            Cleanup();
         }
-
-        _connector.EndUserAction();
-        Cleanup();
 
         void Cleanup()
         {
@@ -529,6 +548,46 @@ public sealed class NpgsqlBinaryExporter : ICancelable
     }
 
     #endregion
+
+    #region Tracing
+
+    void TraceExportStart(string copyToCommand)
+    {
+        Debug.Assert(CurrentActivity is null);
+        if (NpgsqlActivitySource.IsEnabled)
+        {
+            CurrentActivity = NpgsqlActivitySource.ExportStart(copyToCommand, _connector);
+        }
+    }
+
+    void TraceExportStop()
+    {
+        if (CurrentActivity is not null)
+        {
+            NpgsqlActivitySource.ExportStop(CurrentActivity, _rowsExported);
+            CurrentActivity = null;
+        }
+    }
+
+    private void TraceSetCancelled()
+    {
+        if (CurrentActivity is not null)
+        {
+            NpgsqlActivitySource.SetCancelled(CurrentActivity);
+            CurrentActivity = null;
+        }
+    }
+
+    void TraceSetException(Exception exception)
+    {
+        if (CurrentActivity is not null)
+        {
+            NpgsqlActivitySource.SetException(CurrentActivity, exception);
+            CurrentActivity = null;
+        }
+    }
+
+    #endregion Tracing
 
     #region Enums
 

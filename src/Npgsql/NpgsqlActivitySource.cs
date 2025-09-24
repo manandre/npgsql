@@ -148,21 +148,35 @@ static class NpgsqlActivitySource
     internal static Activity? ImportStart(string copyFromCommand, NpgsqlConnector connector, string? spanName)
     {
         var dbName = connector.Settings.Database ?? "UNKNOWN";
-
-        var activity = Source.StartActivity(spanName ?? dbName, ActivityKind.Client);
-
+        var activity = Source.StartActivity(dbName, ActivityKind.Client);
         if (activity is not { IsAllDataRequested: true })
             return activity;
-
         activity.SetTag("db.statement", copyFromCommand);
         activity.SetTag("db.operation", "COPY FROM");
-
         Enrich(activity, connector);
+        return activity;
+    }
 
+    internal static Activity? ExportStart(string copyToCommand, NpgsqlConnector connector)
+    {
+        var dbName = connector.Settings.Database ?? "UNKNOWN";
+        var activity = Source.StartActivity(dbName, ActivityKind.Client);
+        if (activity is not { IsAllDataRequested: true })
+            return activity;
+        activity.SetTag("db.statement", copyToCommand);
+        activity.SetTag("db.operation", "COPY TO");
+        Enrich(activity, connector);
         return activity;
     }
 
     internal static void ImportStop(Activity activity, ulong rows)
+    {
+        activity.SetStatus(ActivityStatusCode.Ok);
+        activity.SetTag("db.rows", rows);
+        activity.Dispose();
+    }
+
+    internal static void ExportStop(Activity activity, ulong rows)
     {
         activity.SetStatus(ActivityStatusCode.Ok);
         activity.SetTag("db.rows", rows);
