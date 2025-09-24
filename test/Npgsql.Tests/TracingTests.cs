@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -828,6 +828,164 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
 
         var queryTag = activity.TagObjects.First(x => x.Key == "db.statement");
         Assert.That(queryTag.Value, Is.EqualTo(copyFromCommand));
+
+        var systemTag = activity.TagObjects.First(x => x.Key == "db.system");
+        Assert.That(systemTag.Value, Is.EqualTo("postgresql"));
+
+        var userTag = activity.TagObjects.First(x => x.Key == "db.user");
+        Assert.That(userTag.Value, Is.EqualTo(conn.Settings.Username));
+
+        var dbNameTag = activity.TagObjects.First(x => x.Key == "db.name");
+        Assert.That(dbNameTag.Value, Is.EqualTo(conn.Settings.Database));
+
+        var connStringTag = activity.TagObjects.First(x => x.Key == "db.connection_string");
+        Assert.That(connStringTag.Value, Is.EqualTo(conn.ConnectionString));
+
+        if (!IsMultiplexing)
+        {
+            var connIDTag = activity.TagObjects.First(x => x.Key == "db.connection_id");
+            Assert.That(connIDTag.Value, Is.EqualTo(conn.ProcessID));
+        }
+        else
+            Assert.That(activity.TagObjects.Any(x => x.Key == "db.connection_id"));
+    }
+
+    [Test]
+    public async Task Basic_binary_export([Values] bool async)
+    {
+        if (IsMultiplexing && !async)
+            return;
+
+        var activities = new List<Activity>();
+
+        using var activityListener = new ActivityListener();
+        activityListener.ShouldListenTo = source => source.Name == "Npgsql";
+        activityListener.Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded;
+        activityListener.ActivityStopped = activity => activities.Add(activity);
+        ActivitySource.AddActivityListener(activityListener);
+
+        await using var dataSource = CreateDataSource(DisablePhysicalOpenTracing);
+        await using var conn = await dataSource.OpenConnectionAsync();
+
+        var table = await CreateTempTable(conn, "field_text TEXT, field_int2 SMALLINT");
+        Assert.That(activities.Count, Is.EqualTo(1));
+        activities.Clear();
+
+        // Insert exactly one row before export
+        var insertCmd = $"INSERT INTO {table} (field_text, field_int2) VALUES ('Hello', 8)";
+        await conn.ExecuteNonQueryAsync(insertCmd);
+        Assert.That(activities.Count, Is.EqualTo(IsMultiplexing ? 2 : 1));
+        activities.Clear();
+
+        var copyToCommand = $"COPY {table} (field_text, field_int2) TO STDOUT BINARY";
+        var rowsExported = 0;
+        await using (var reader = async
+            ? await conn.BeginBinaryExportAsync(copyToCommand)
+            : conn.BeginBinaryExport(copyToCommand))
+        {
+            while (await reader.StartRowAsync() != -1)
+            {
+                reader.Read<string>();
+                reader.Read<short>();
+                rowsExported++;
+            }
+        }
+
+        Assert.That(rowsExported, Is.EqualTo(1), "Should export exactly one row");
+        Assert.That(activities.Count, Is.EqualTo(1));
+        var activity = activities[0];
+        Assert.That(activity.DisplayName, Is.EqualTo(conn.Settings.Database));
+        Assert.That(activity.OperationName, Is.EqualTo(conn.Settings.Database));
+        Assert.That(activity.Status, Is.EqualTo(ActivityStatusCode.Ok));
+
+        var expectedTagCount = conn.Settings.Port == 5432 ? 11 : 12;
+        Assert.That(activity.TagObjects.Count(), Is.EqualTo(expectedTagCount));
+
+        var queryTag = activity.TagObjects.First(x => x.Key == "db.statement");
+        Assert.That(queryTag.Value, Is.EqualTo(copyToCommand));
+
+        var operationTag = activity.TagObjects.First(x => x.Key == "db.operation");
+        Assert.That(operationTag.Value, Is.EqualTo("COPY TO"));
+
+        var rowsTag = activity.TagObjects.First(x => x.Key == "db.rows");
+        Assert.That(rowsTag.Value, Is.EqualTo(rowsExported));
+
+        var systemTag = activity.TagObjects.First(x => x.Key == "db.system");
+        Assert.That(systemTag.Value, Is.EqualTo("postgresql"));
+
+        var userTag = activity.TagObjects.First(x => x.Key == "db.user");
+        Assert.That(userTag.Value, Is.EqualTo(conn.Settings.Username));
+
+        var dbNameTag = activity.TagObjects.First(x => x.Key == "db.name");
+        Assert.That(dbNameTag.Value, Is.EqualTo(conn.Settings.Database));
+
+        var connStringTag = activity.TagObjects.First(x => x.Key == "db.connection_string");
+        Assert.That(connStringTag.Value, Is.EqualTo(conn.ConnectionString));
+
+        if (!IsMultiplexing)
+        {
+            var connIDTag = activity.TagObjects.First(x => x.Key == "db.connection_id");
+            Assert.That(connIDTag.Value, Is.EqualTo(conn.ProcessID));
+        }
+        else
+            Assert.That(activity.TagObjects.Any(x => x.Key == "db.connection_id"));
+    }
+
+    [Test]
+    public async Task Error_binary_export([Values] bool async)
+    {
+        if (IsMultiplexing && !async)
+            return;
+
+        var activities = new List<Activity>();
+
+        using var activityListener = new ActivityListener();
+        activityListener.ShouldListenTo = source => source.Name == "Npgsql";
+        activityListener.Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded;
+        activityListener.ActivityStopped = activity => activities.Add(activity);
+        ActivitySource.AddActivityListener(activityListener);
+
+        await using var dataSource = CreateDataSource(DisablePhysicalOpenTracing);
+        await using var conn = await dataSource.OpenConnectionAsync();
+
+        var copyToCommand = $"COPY non_existing_table (field_text, field_int2) TO STDOUT BINARY";
+        Assert.ThrowsAsync<PostgresException>(async () =>
+        {
+            await using var reader = async
+                ? await conn.BeginBinaryExportAsync(copyToCommand)
+                : conn.BeginBinaryExport(copyToCommand);
+        });
+
+        Assert.That(activities.Count, Is.EqualTo(1));
+        var activity = activities[0];
+        Assert.That(activity.DisplayName, Is.EqualTo(conn.Settings.Database));
+        Assert.That(activity.OperationName, Is.EqualTo(conn.Settings.Database));
+        Assert.That(activity.Status, Is.EqualTo(ActivityStatusCode.Error));
+        Assert.That(activity.StatusDescription, Is.EqualTo(PostgresErrorCodes.UndefinedTable));
+
+        Assert.That(activity.Events.Count(), Is.EqualTo(1));
+        var exceptionEvent = activity.Events.First();
+        Assert.That(exceptionEvent.Name, Is.EqualTo("exception"));
+
+        Assert.That(exceptionEvent.Tags.Count(), Is.EqualTo(4));
+
+        var exceptionTypeTag = exceptionEvent.Tags.First(x => x.Key == "exception.type");
+        Assert.That(exceptionTypeTag.Value, Is.EqualTo("Npgsql.PostgresException"));
+
+        var exceptionMessageTag = exceptionEvent.Tags.First(x => x.Key == "exception.message");
+        Assert.That((string)exceptionMessageTag.Value!, Does.Contain("relation \"non_existing_table\" does not exist"));
+
+        var exceptionStacktraceTag = exceptionEvent.Tags.First(x => x.Key == "exception.stacktrace");
+        Assert.That((string)exceptionStacktraceTag.Value!, Does.Contain("relation \"non_existing_table\" does not exist"));
+
+        var exceptionEscapedTag = exceptionEvent.Tags.First(x => x.Key == "exception.escaped");
+        Assert.That(exceptionEscapedTag.Value, Is.True);
+
+        var expectedTagCount = conn.Settings.Port == 5432 ? 10 : 11;
+        Assert.That(activity.TagObjects.Count(), Is.EqualTo(expectedTagCount));
+
+        var queryTag = activity.TagObjects.First(x => x.Key == "db.statement");
+        Assert.That(queryTag.Value, Is.EqualTo(copyToCommand));
 
         var systemTag = activity.TagObjects.First(x => x.Key == "db.system");
         Assert.That(systemTag.Value, Is.EqualTo("postgresql"));
