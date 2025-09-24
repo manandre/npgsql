@@ -163,17 +163,18 @@ static class NpgsqlActivitySource
     internal static Activity? ExportStart(string copyToCommand, NpgsqlConnector connector, string? spanName)
         => CopyStart(copyToCommand, connector, spanName, "COPY TO");
 
-    private static void CopyStop(Activity activity, ulong rows)
+    private static void CopyStop(Activity activity, ulong? rows = null)
     {
         activity.SetStatus(ActivityStatusCode.Ok);
-        activity.SetTag("db.rows", rows);
+        if (rows.HasValue)
+            activity.SetTag("db.rows", rows.Value);
         activity.Dispose();
     }
 
-    internal static void ImportStop(Activity activity, ulong rows)
+    internal static void ImportStop(Activity activity, ulong? rows = null)
         => CopyStop(activity, rows);
 
-    internal static void ExportStop(Activity activity, ulong rows)
+    internal static void ExportStop(Activity activity, ulong? rows = null)
         => CopyStop(activity, rows);
 
     internal static void SetCancelled(Activity activity)
