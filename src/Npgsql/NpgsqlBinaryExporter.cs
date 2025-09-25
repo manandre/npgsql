@@ -492,6 +492,7 @@ public sealed class NpgsqlBinaryExporter : ICancelable
             if (_state is ExporterState.Consumed or ExporterState.Uninitialized)
             {
                 LogMessages.BinaryCopyOperationCompleted(_copyLogger, _rowsExported, _connector.Id);
+                TraceExportStop();
             }
             else if (!_connector.IsBroken)
             {
@@ -510,6 +511,16 @@ public sealed class NpgsqlBinaryExporter : ICancelable
                     // We intentionally do not pass a CancellationToken since we don't want to cancel cleanup
                     Expect<CommandCompleteMessage>(await _connector.ReadMessage(async).ConfigureAwait(false), _connector);
                     Expect<ReadyForQueryMessage>(await _connector.ReadMessage(async).ConfigureAwait(false), _connector);
+
+                    if (_connector.UserCancellationRequested)
+                    {
+                        LogMessages.CopyOperationCancelled(_copyLogger, _connector.Id);
+                        TraceSetCancelled();
+                    }
+                    else
+                    {
+                        TraceExportStop();
+                    }
                 }
                 catch (OperationCanceledException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.QueryCanceled })
                 {
@@ -522,7 +533,6 @@ public sealed class NpgsqlBinaryExporter : ICancelable
                     TraceSetException(e);
                 }
             }
-            TraceExportStop();
         }
         finally
         {

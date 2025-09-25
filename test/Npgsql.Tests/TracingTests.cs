@@ -932,6 +932,84 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
     }
 
     [Test]
+    public async Task Cancel_binary_export([Values] bool async)
+    {
+        if (IsMultiplexing && !async)
+            return;
+
+        var activities = new List<Activity>();
+
+        using var activityListener = new ActivityListener();
+        activityListener.ShouldListenTo = source => source.Name == "Npgsql";
+        activityListener.Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded;
+        activityListener.ActivityStopped = activity => activities.Add(activity);
+        ActivitySource.AddActivityListener(activityListener);
+
+        await using var dataSource = CreateDataSource();
+        await using var conn = await dataSource.OpenConnectionAsync();
+
+        // We're not interested in physical open's activity
+        Assert.That(activities.Count, Is.EqualTo(1));
+        activities.Clear();
+
+        // This must be large enough to cause Postgres to queue up CopyData messages.
+        const string copyToCommand = "COPY (select md5(random()::text) as id from generate_series(1, 100000)) TO STDOUT BINARY";
+        var exporter = async
+            ? await conn.BeginBinaryExportAsync(copyToCommand)
+            : conn.BeginBinaryExport(copyToCommand);
+        if (async)
+        {
+            await exporter.StartRowAsync();
+            await exporter.ReadAsync<string>();
+            await exporter.CancelAsync();
+            await exporter.DisposeAsync();
+        }
+        else
+        {
+            exporter.StartRow();
+            exporter.Read<string>();
+            exporter.Cancel();
+            exporter.Dispose();
+        }
+
+        Assert.That(activities.Count, Is.EqualTo(1));
+        var activity = activities[0];
+        Assert.That(activity.DisplayName, Is.EqualTo(conn.Settings.Database));
+        Assert.That(activity.OperationName, Is.EqualTo(conn.Settings.Database));
+        Assert.That(activity.Status, Is.EqualTo(ActivityStatusCode.Error));
+        Assert.That(activity.StatusDescription, Is.EqualTo("Cancelled"));
+
+        var expectedTagCount = conn.Settings.Port == 5432 ? 10 : 11;
+        Assert.That(activity.TagObjects.Count(), Is.EqualTo(expectedTagCount));
+
+        var queryTag = activity.TagObjects.First(x => x.Key == "db.statement");
+        Assert.That(queryTag.Value, Is.EqualTo(copyToCommand));
+
+        var operationTag = activity.TagObjects.First(x => x.Key == "db.operation");
+        Assert.That(operationTag.Value, Is.EqualTo("COPY TO"));
+
+        var systemTag = activity.TagObjects.First(x => x.Key == "db.system");
+        Assert.That(systemTag.Value, Is.EqualTo("postgresql"));
+
+        var userTag = activity.TagObjects.First(x => x.Key == "db.user");
+        Assert.That(userTag.Value, Is.EqualTo(conn.Settings.Username));
+
+        var dbNameTag = activity.TagObjects.First(x => x.Key == "db.name");
+        Assert.That(dbNameTag.Value, Is.EqualTo(conn.Settings.Database));
+
+        var connStringTag = activity.TagObjects.First(x => x.Key == "db.connection_string");
+        Assert.That(connStringTag.Value, Is.EqualTo(conn.ConnectionString));
+
+        if (!IsMultiplexing)
+        {
+            var connIDTag = activity.TagObjects.First(x => x.Key == "db.connection_id");
+            Assert.That(connIDTag.Value, Is.EqualTo(conn.ProcessID));
+        }
+        else
+            Assert.That(activity.TagObjects.Any(x => x.Key == "db.connection_id"));
+    }
+
+    [Test]
     public async Task Error_binary_export([Values] bool async)
     {
         if (IsMultiplexing && !async)
