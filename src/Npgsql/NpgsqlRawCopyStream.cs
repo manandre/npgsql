@@ -349,14 +349,18 @@ public sealed class NpgsqlRawCopyStream : Stream, ICancelable
             }
             catch (PostgresException e)
             {
-                TraceSetException(e);
                 // TODO: NpgsqlBinaryImporter doesn't cleanup on cancellation
                 // And instead relies on users disposing the object
                 // We probably should do the same here
                 Cleanup();
 
                 if (e.SqlState != PostgresErrorCodes.QueryCanceled)
+                {
+                    TraceSetException(e);
                     throw;
+                }
+
+                TraceSetCancelled();
             }
         }
         else
@@ -404,6 +408,16 @@ public sealed class NpgsqlRawCopyStream : Stream, ICancelable
                             await _readBuf.Skip(async, _leftToReadInDataMsg).ConfigureAwait(false);
                         }
                         _connector.SkipUntil(BackendMessageCode.ReadyForQuery);
+
+                        if (_connector.PostgresCancellationPerformed)
+                        {
+                            LogMessages.CopyOperationCancelled(_copyLogger, _connector.Id);
+                            TraceSetCancelled();
+                        }
+                        else
+                        {
+                            TraceExportStop();
+                        }
                     }
                     catch (OperationCanceledException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.QueryCanceled })
                     {
@@ -416,7 +430,10 @@ public sealed class NpgsqlRawCopyStream : Stream, ICancelable
                         TraceSetException(e);
                     }
                 }
-                TraceExportStop();
+                else
+                {
+                    TraceExportStop();
+                }
             }
         }
         finally

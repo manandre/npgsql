@@ -1223,6 +1223,112 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
     }
 
     [Test]
+    public async Task Cancel_raw_copy_read_tracing([Values] bool async)
+    {
+        if (IsMultiplexing && !async)
+            return;
+
+        var activities = new List<Activity>();
+
+        using var activityListener = new ActivityListener();
+        activityListener.ShouldListenTo = source => source.Name == "Npgsql";
+        activityListener.Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded;
+        activityListener.ActivityStopped = activity => activities.Add(activity);
+        ActivitySource.AddActivityListener(activityListener);
+
+        await using var dataSource = CreateDataSource(DisablePhysicalOpenTracing);
+        await using var conn = await dataSource.OpenConnectionAsync();
+
+        var table = await CreateTempTable(conn, "field_text TEXT, field_int2 SMALLINT");
+        Assert.That(activities.Count, Is.EqualTo(1));
+        activities.Clear();
+
+        // Insert a row for export
+        await conn.ExecuteNonQueryAsync($"INSERT INTO {table} (field_text, field_int2) VALUES ('Hello', 8)");
+        activities.Clear();
+
+        // Raw binary export
+        var copyToCommand = $"COPY {table} (field_text, field_int2) TO STDIN BINARY";
+        var stream = async
+            ? await conn.BeginRawBinaryCopyAsync(copyToCommand)
+            : conn.BeginRawBinaryCopy(copyToCommand);
+        var buffer = new byte[1024];
+        if (async)
+        {
+            var _ = await stream.ReadAsync(buffer, 0, buffer.Length);
+            await stream.CancelAsync();
+            await stream.DisposeAsync();
+        }
+        else
+        {
+            var _ = stream.Read(buffer, 0, buffer.Length);
+            stream.Cancel();
+            stream.Dispose();
+        }
+
+        Assert.That(activities.Count, Is.EqualTo(1));
+        var activity = activities[0];
+        Assert.That(activity.DisplayName, Is.EqualTo(conn.Settings.Database));
+        Assert.That(activity.OperationName, Is.EqualTo(conn.Settings.Database));
+        Assert.That(activity.Status, Is.EqualTo(ActivityStatusCode.Error));
+        Assert.That(activity.StatusDescription, Is.EqualTo("Cancelled"));
+        Assert.That(activity.TagObjects.Any(x => x.Key == "db.rows"), Is.False, "db.rows should not be present for raw copy");
+        Assert.That(activity.TagObjects.Any(x => x.Key == "db.statement" && (string?)x.Value == copyToCommand));
+    }
+
+    [Test]
+    public async Task Cancel_raw_copy_write_tracing([Values] bool async)
+    {
+        if (IsMultiplexing && !async)
+            return;
+
+        var activities = new List<Activity>();
+
+        using var activityListener = new ActivityListener();
+        activityListener.ShouldListenTo = source => source.Name == "Npgsql";
+        activityListener.Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded;
+        activityListener.ActivityStopped = activity => activities.Add(activity);
+        ActivitySource.AddActivityListener(activityListener);
+
+        await using var dataSource = CreateDataSource(DisablePhysicalOpenTracing);
+        await using var conn = await dataSource.OpenConnectionAsync();
+
+        var table = await CreateTempTable(conn, "field_text TEXT, field_int2 SMALLINT");
+        Assert.That(activities.Count, Is.EqualTo(1));
+        activities.Clear();
+
+        // Raw binary import
+        var copyToCommand = $"COPY {table} (field_text, field_int2) FROM STDIN BINARY";
+        var stream = async
+            ? await conn.BeginRawBinaryCopyAsync(copyToCommand)
+            : conn.BeginRawBinaryCopy(copyToCommand);
+        var garbage = new byte[] { 1, 2, 3, 4 };
+        if (async)
+        {
+            await stream.WriteAsync(garbage);
+            await stream.FlushAsync();
+            await stream.CancelAsync();
+            await stream.DisposeAsync();
+        }
+        else
+        {
+            stream.Write(garbage);
+            stream.Flush();
+            stream.Cancel();
+            stream.Dispose();
+        }
+
+        Assert.That(activities.Count, Is.EqualTo(1));
+        var activity = activities[0];
+        Assert.That(activity.DisplayName, Is.EqualTo(conn.Settings.Database));
+        Assert.That(activity.OperationName, Is.EqualTo(conn.Settings.Database));
+        Assert.That(activity.Status, Is.EqualTo(ActivityStatusCode.Error));
+        Assert.That(activity.StatusDescription, Is.EqualTo("Cancelled"));
+        Assert.That(activity.TagObjects.Any(x => x.Key == "db.rows"), Is.False, "db.rows should not be present for raw copy");
+        Assert.That(activity.TagObjects.Any(x => x.Key == "db.statement" && (string?)x.Value == copyToCommand));
+    }
+
+    [Test]
     public async Task Error_raw_copy_tracing([Values] bool async)
     {
         if (IsMultiplexing && !async)
