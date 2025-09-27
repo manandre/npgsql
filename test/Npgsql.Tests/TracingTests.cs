@@ -883,11 +883,23 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
             ? await conn.BeginBinaryExportAsync(copyToCommand)
             : conn.BeginBinaryExport(copyToCommand))
         {
-            while (await reader.StartRowAsync() != -1)
+            if (async)
             {
-                reader.Read<string>();
-                reader.Read<short>();
-                rowsExported++;
+                while (await reader.StartRowAsync() != -1)
+                {
+                    await reader.ReadAsync<string>();
+                    await reader.ReadAsync<short>();
+                    rowsExported++;
+                }
+            }
+            else
+            {
+                while (reader.StartRow() != -1)
+                {
+                    reader.Read<string>();
+                    reader.Read<short>();
+                    rowsExported++;
+                }
             }
         }
 
