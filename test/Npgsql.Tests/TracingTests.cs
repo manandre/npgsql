@@ -1346,7 +1346,7 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
         await using var conn = await dataSource.OpenConnectionAsync();
 
         var copyFromCommand = $"COPY non_existing_table (field_text, field_int2) FROM STDIN BINARY";
-        Assert.ThrowsAsync<PostgresException>(async () =>
+        var ex = Assert.ThrowsAsync<PostgresException>(async () =>
         {
             await using var stream = async
                 ? await conn.BeginRawBinaryCopyAsync(copyFromCommand)
@@ -1358,6 +1358,21 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
         Assert.That(activity.Status, Is.EqualTo(ActivityStatusCode.Error));
         Assert.That(activity.TagObjects.Any(x => x.Key == "db.rows"), Is.False, "db.rows should not be present for raw copy");
         Assert.That(activity.TagObjects.Any(x => x.Key == "db.statement" && (string?)x.Value == copyFromCommand));
+
+        Assert.That(activity.Events.Count(), Is.EqualTo(1));
+        var exceptionEvent = activity.Events.First();
+        Assert.That(exceptionEvent.Name, Is.EqualTo("exception"));
+
+        Assert.That(exceptionEvent.Tags.Count(), Is.EqualTo(4));
+
+        var exceptionTypeTag = exceptionEvent.Tags.First(x => x.Key == "exception.type");
+        Assert.That(exceptionTypeTag.Value, Is.EqualTo(ex.GetType().FullName));
+
+        var exceptionMessageTag = exceptionEvent.Tags.First(x => x.Key == "exception.message");
+        Assert.That((string)exceptionMessageTag.Value!, Does.Contain(ex.Message));
+
+        var exceptionStacktraceTag = exceptionEvent.Tags.First(x => x.Key == "exception.stacktrace");
+        Assert.That((string)exceptionStacktraceTag.Value!, Does.Contain(ex.Message));
     }
 
     static void DisablePhysicalOpenTracing(NpgsqlDataSourceBuilder dsb) => dsb.ConfigureTracing(tob => tob.EnablePhysicalOpenTracing(false));
