@@ -1035,7 +1035,7 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
         await using var conn = await dataSource.OpenConnectionAsync();
 
         var copyToCommand = $"COPY non_existing_table (field_text, field_int2) TO STDOUT BINARY";
-        Assert.ThrowsAsync<PostgresException>(async () =>
+        var ex = Assert.ThrowsAsync<PostgresException>(async () =>
         {
             await using var reader = async
                 ? await conn.BeginBinaryExportAsync(copyToCommand)
@@ -1056,13 +1056,13 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
         Assert.That(exceptionEvent.Tags.Count(), Is.EqualTo(4));
 
         var exceptionTypeTag = exceptionEvent.Tags.First(x => x.Key == "exception.type");
-        Assert.That(exceptionTypeTag.Value, Is.EqualTo("Npgsql.PostgresException"));
+        Assert.That(exceptionTypeTag.Value, Is.EqualTo(ex.GetType().FullName));
 
         var exceptionMessageTag = exceptionEvent.Tags.First(x => x.Key == "exception.message");
-        Assert.That((string)exceptionMessageTag.Value!, Does.Contain("relation \"non_existing_table\" does not exist"));
+        Assert.That((string)exceptionMessageTag.Value!, Does.Contain(ex.Message));
 
         var exceptionStacktraceTag = exceptionEvent.Tags.First(x => x.Key == "exception.stacktrace");
-        Assert.That((string)exceptionStacktraceTag.Value!, Does.Contain("relation \"non_existing_table\" does not exist"));
+        Assert.That((string)exceptionStacktraceTag.Value!, Does.Contain(ex.Message));
 
         var exceptionEscapedTag = exceptionEvent.Tags.First(x => x.Key == "exception.escaped");
         Assert.That(exceptionEscapedTag.Value, Is.True);
