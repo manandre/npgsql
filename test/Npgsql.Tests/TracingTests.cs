@@ -874,7 +874,7 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
         // Insert exactly one row before export
         var insertCmd = $"INSERT INTO {table} (field_text, field_int2) VALUES ('Hello', 8)";
         await conn.ExecuteNonQueryAsync(insertCmd);
-        Assert.That(activities.Count, Is.EqualTo(IsMultiplexing ? 2 : 1));
+        Assert.That(activities.Count, Is.EqualTo(1));
         activities.Clear();
 
         var copyToCommand = $"COPY {table} (field_text, field_int2) TO STDOUT BINARY";
@@ -957,12 +957,8 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
         activityListener.ActivityStopped = activity => activities.Add(activity);
         ActivitySource.AddActivityListener(activityListener);
 
-        await using var dataSource = CreateDataSource();
+        await using var dataSource = CreateDataSource(DisablePhysicalOpenTracing);
         await using var conn = await dataSource.OpenConnectionAsync();
-
-        // We're not interested in physical open's activity
-        Assert.That(activities.Count, Is.EqualTo(1));
-        activities.Clear();
 
         // This must be large enough to cause Postgres to queue up CopyData messages.
         const string copyToCommand = "COPY (select md5(random()::text) as id from generate_series(1, 100000)) TO STDOUT BINARY";
