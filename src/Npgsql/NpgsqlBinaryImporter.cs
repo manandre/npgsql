@@ -321,6 +321,7 @@ public sealed class NpgsqlBinaryImporter : ICancelable
             }
             catch (Exception ex)
             {
+                TraceSetException(ex);
                 _connector.Break(ex);
                 throw;
             }
