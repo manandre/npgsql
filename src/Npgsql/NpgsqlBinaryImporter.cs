@@ -605,7 +605,19 @@ public sealed class NpgsqlBinaryImporter : ICancelable
         Debug.Assert(CurrentActivity is null);
         if (NpgsqlActivitySource.IsEnabled)
         {
-            CurrentActivity = NpgsqlActivitySource.ImportStart(copyFromCommand, _connector);
+            var tracingOptions = _connector.DataSource.Configuration.TracingOptions;
+            var copyOperationType = CopyOperationType.BinaryImport;
+
+            if (tracingOptions.CopyOperationFilter?.Invoke(copyFromCommand, copyOperationType) ?? true)
+            {
+                var spanName = tracingOptions.CopyOperationSpanNameProvider?.Invoke(copyFromCommand, copyOperationType);
+                CurrentActivity = NpgsqlActivitySource.ImportStart(copyFromCommand, _connector, spanName);
+
+                if (CurrentActivity != null)
+                {
+                    tracingOptions.CopyOperationEnrichmentCallback?.Invoke(CurrentActivity, copyFromCommand, copyOperationType);
+                }
+            }
         }
     }
 

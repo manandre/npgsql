@@ -145,11 +145,11 @@ static class NpgsqlActivitySource
         activity.Dispose();
     }
 
-    internal static Activity? ImportStart(string copyFromCommand, NpgsqlConnector connector)
+    internal static Activity? ImportStart(string copyFromCommand, NpgsqlConnector connector, string? spanName)
     {
         var dbName = connector.Settings.Database ?? "UNKNOWN";
 
-        var activity = Source.StartActivity(dbName, ActivityKind.Client);
+        var activity = Source.StartActivity(spanName ?? dbName, ActivityKind.Client);
 
         if (activity is not { IsAllDataRequested: true })
             return activity;
