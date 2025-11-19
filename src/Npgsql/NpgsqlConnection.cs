@@ -1287,7 +1287,7 @@ public sealed class NpgsqlConnection : DbConnection, ICloneable, IComponent
         var copyStream = new NpgsqlRawCopyStream(connector);
         try
         {
-            await copyStream.Init(copyFromCommand, async, cancellationToken).ConfigureAwait(false);
+            await copyStream.Init(copyFromCommand, CopyOperationType.TextImport, async, cancellationToken).ConfigureAwait(false);
             var writer = new NpgsqlCopyTextWriter(connector, copyStream);
             connector.CurrentCopyOperation = writer;
             return writer;
@@ -1353,7 +1353,7 @@ public sealed class NpgsqlConnection : DbConnection, ICloneable, IComponent
         var copyStream = new NpgsqlRawCopyStream(connector);
         try
         {
-            await copyStream.Init(copyToCommand, async, cancellationToken).ConfigureAwait(false);
+            await copyStream.Init(copyToCommand, CopyOperationType.TextExport, async, cancellationToken).ConfigureAwait(false);
             var reader = new NpgsqlCopyTextReader(connector, copyStream);
             connector.CurrentCopyOperation = reader;
             return reader;
@@ -1419,7 +1419,7 @@ public sealed class NpgsqlConnection : DbConnection, ICloneable, IComponent
         var stream = new NpgsqlRawCopyStream(connector);
         try
         {
-            await stream.Init(copyCommand, async, cancellationToken).ConfigureAwait(false);
+            await stream.Init(copyCommand, CopyOperationType.RawBinary, async, cancellationToken).ConfigureAwait(false);
             if (!stream.IsBinary)
             {
                 // TODO: Stop the COPY operation gracefully, no breaking

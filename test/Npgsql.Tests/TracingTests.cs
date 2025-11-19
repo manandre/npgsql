@@ -1536,6 +1536,85 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
     }
 
     [Test]
+    public async Task Configure_tracing_text_import([Values] bool async)
+    {
+        if (IsMultiplexing && !async)
+            return;
+
+        var activities = new List<Activity>();
+
+        using var activityListener = new ActivityListener();
+        activityListener.ShouldListenTo = source => source.Name == "Npgsql";
+        activityListener.Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded;
+        activityListener.ActivityStopped = activity => activities.Add(activity);
+        ActivitySource.AddActivityListener(activityListener);
+
+        await using var dataSource = CreateDataSource(builder =>
+        {
+            DisablePhysicalOpenTracing(builder);
+            builder.ConfigureTracing(options =>
+            {
+                options
+                    .ConfigureCopyOperationFilter((command, type) => type == CopyOperationType.TextImport && command.Contains("int2"))
+                    .ConfigureCopyOperationSpanNameProvider((_, type) => type == CopyOperationType.TextImport ? "custom_text_import" : null)
+                    .ConfigureCopyOperationEnrichmentCallback((activity, _, type) =>
+                    {
+                        if (type == CopyOperationType.TextImport)
+                        {
+                            activity.AddTag("custom_tag", "custom_value");
+                        }
+                    });
+            });
+        });
+
+        await using var conn = await dataSource.OpenConnectionAsync();
+
+        // Filtered out
+        {
+            var table = await CreateTempTable(conn, "field_text TEXT, field_int SMALLINT");
+
+            // We're not interested in temp table creation's activity
+            Assert.That(activities.Count, Is.EqualTo(1));
+            activities.Clear();
+
+            var copyFromCommand = $"COPY {table} (field_text, field_int) FROM STDIN";
+
+            await using (var writer = async
+                ? await conn.BeginTextImportAsync(copyFromCommand)
+                : conn.BeginTextImport(copyFromCommand))
+            { }
+
+            Assert.That(activities.Count, Is.EqualTo(0));
+        }
+
+        // Filtered in
+        {
+            var table = await CreateTempTable(conn, "field_text TEXT, field_int2 SMALLINT");
+
+            // We're not interested in temp table creation's activity
+            Assert.That(activities.Count, Is.EqualTo(1));
+            activities.Clear();
+
+            var copyFromCommand = $"COPY {table} (field_text, field_int2) FROM STDIN";
+
+            await using (var writer = async
+                ? await conn.BeginTextImportAsync(copyFromCommand)
+                : conn.BeginTextImport(copyFromCommand))
+            { }
+
+            Assert.That(activities.Count, Is.EqualTo(1));
+            var activity = activities[0];
+            Assert.That(activity.DisplayName, Is.EqualTo("custom_text_import"));
+            Assert.That(activity.OperationName, Is.EqualTo("custom_text_import"));
+
+            Assert.That(activity.Events.Count(), Is.EqualTo(0));
+
+            var customTag = activity.TagObjects.First(x => x.Key == "custom_tag");
+            Assert.That(customTag.Value, Is.EqualTo("custom_value"));
+        }
+    }
+
+    [Test]
     public async Task Cancel_text_import([Values] bool async)
     {
         if (IsMultiplexing && !async)
@@ -1776,6 +1855,95 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
         }
         else
             Assert.That(activity.TagObjects.Any(x => x.Key == "db.connection_id"));
+    }
+
+    [Test]
+    public async Task Configure_tracing_text_export([Values] bool async)
+    {
+        if (IsMultiplexing && !async)
+            return;
+
+        var activities = new List<Activity>();
+
+        using var activityListener = new ActivityListener();
+        activityListener.ShouldListenTo = source => source.Name == "Npgsql";
+        activityListener.Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded;
+        activityListener.ActivityStopped = activity => activities.Add(activity);
+        ActivitySource.AddActivityListener(activityListener);
+
+        await using var dataSource = CreateDataSource(builder =>
+        {
+            DisablePhysicalOpenTracing(builder);
+            builder.ConfigureTracing(options =>
+            {
+                options
+                    .ConfigureCopyOperationFilter((command, type) => type == CopyOperationType.TextExport && command.Contains("int2"))
+                    .ConfigureCopyOperationSpanNameProvider((_, type) => type == CopyOperationType.TextExport ? "custom_text_export" : null)
+                    .ConfigureCopyOperationEnrichmentCallback((activity, _, type) =>
+                    {
+                        if (type == CopyOperationType.TextExport)
+                        {
+                            activity.AddTag("custom_tag", "custom_value");
+                        }
+                    });
+            });
+        });
+
+        await using var conn = await dataSource.OpenConnectionAsync();
+
+        // Filtered out
+        {
+            var table = await CreateTempTable(conn, "field_text TEXT, field_int SMALLINT");
+            // We're not interested in temp table creation's activity
+            Assert.That(activities.Count, Is.EqualTo(1));
+            activities.Clear();
+            // Insert exactly one row before export
+            var insertCmd = $"INSERT INTO {table} (field_text, field_int) VALUES ('Hello', 8)";
+            await conn.ExecuteNonQueryAsync(insertCmd);
+            Assert.That(activities.Count, Is.EqualTo(1));
+            activities.Clear();
+            var copyFromCommand = $"COPY {table} (field_text, field_int) TO STDIN";
+            using (var reader = async
+                ? await conn.BeginTextExportAsync(copyFromCommand)
+                : conn.BeginTextExport(copyFromCommand))
+            { }
+
+            Assert.That(activities.Count, Is.EqualTo(0));
+        }
+
+        // Filtered in
+        {
+            var table = await CreateTempTable(conn, "field_text TEXT, field_int2 SMALLINT");
+
+            // We're not interested in temp table creation's activity
+            Assert.That(activities.Count, Is.EqualTo(1));
+            activities.Clear();
+
+            // Insert exactly one row before export
+            var insertCmd = $"INSERT INTO {table} (field_text, field_int2) VALUES ('Hello', 8)";
+            await conn.ExecuteNonQueryAsync(insertCmd);
+            Assert.That(activities.Count, Is.EqualTo(1));
+            activities.Clear();
+
+            var longString = new StringBuilder(conn.Settings.WriteBufferSize + 50).Append('a').ToString();
+
+            var copyFromCommand = $"COPY {table} (field_text, field_int2) TO STDIN";
+
+            using (var reader = async
+                ? await conn.BeginTextExportAsync(copyFromCommand)
+                : conn.BeginTextExport(copyFromCommand))
+            { }
+
+            Assert.That(activities.Count, Is.EqualTo(1));
+            var activity = activities[0];
+            Assert.That(activity.DisplayName, Is.EqualTo("custom_text_export"));
+            Assert.That(activity.OperationName, Is.EqualTo("custom_text_export"));
+
+            Assert.That(activity.Events.Count(), Is.EqualTo(0));
+
+            var customTag = activity.TagObjects.First(x => x.Key == "custom_tag");
+            Assert.That(customTag.Value, Is.EqualTo("custom_value"));
+        }
     }
 
     [Test]

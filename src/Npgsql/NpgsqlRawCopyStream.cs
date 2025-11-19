@@ -74,9 +74,9 @@ public sealed class NpgsqlRawCopyStream : Stream, ICancelable
         _copyLogger = connector.LoggingConfiguration.CopyLogger;
     }
 
-    internal async Task Init(string copyCommand, bool async, CancellationToken cancellationToken = default)
+    internal async Task Init(string copyCommand, CopyOperationType copyOperationType, bool async, CancellationToken cancellationToken = default)
     {
-        TraceCopyStart(copyCommand);
+        TraceCopyStart(copyCommand, copyOperationType);
 
         try
         {
@@ -497,13 +497,12 @@ public sealed class NpgsqlRawCopyStream : Stream, ICancelable
 
     #region Tracing
 
-    private void TraceCopyStart(string copyCommand)
+    private void TraceCopyStart(string copyCommand, CopyOperationType copyOperationType)
     {
         Debug.Assert(_copyActivity is null);
         if (NpgsqlActivitySource.IsEnabled)
         {
             var tracingOptions = _connector.DataSource.Configuration.TracingOptions;
-            var copyOperationType = CopyOperationType.RawBinary;
 
             if (tracingOptions.CopyOperationFilter?.Invoke(copyCommand, copyOperationType) ?? true)
             {
