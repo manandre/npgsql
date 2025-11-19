@@ -944,6 +944,90 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
     }
 
     [Test]
+    public async Task Configure_tracing_binary_export([Values] bool async)
+    {
+        if (IsMultiplexing && !async)
+            return;
+
+        var activities = new List<Activity>();
+
+        using var activityListener = new ActivityListener();
+        activityListener.ShouldListenTo = source => source.Name == "Npgsql";
+        activityListener.Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded;
+        activityListener.ActivityStopped = activity => activities.Add(activity);
+        ActivitySource.AddActivityListener(activityListener);
+
+        await using var dataSource = CreateDataSource(builder =>
+        {
+            DisablePhysicalOpenTracing(builder);
+            builder.ConfigureTracing(options =>
+            {
+                options
+                    .ConfigureCopyOperationFilter((command, type) => type == CopyOperationType.BinaryExport && command.Contains("int2"))
+                    .ConfigureCopyOperationSpanNameProvider((_, type) => type == CopyOperationType.BinaryExport ? "custom_binary_export" : null)
+                    .ConfigureCopyOperationEnrichmentCallback((activity, _, type) =>
+                    {
+                        if (type == CopyOperationType.BinaryExport)
+                        {
+                            activity.AddTag("custom_tag", "custom_value");
+                        }
+                    });
+            });
+        });
+        await using var conn = await dataSource.OpenConnectionAsync();
+
+        // Filered out
+        {
+            var table = await CreateTempTable(conn, "field_text TEXT, field_int SMALLINT");
+            Assert.That(activities.Count, Is.EqualTo(1));
+            activities.Clear();
+
+            // Insert exactly one row before export
+            var insertCmd = $"INSERT INTO {table} (field_text, field_int) VALUES ('Hello', 8)";
+            await conn.ExecuteNonQueryAsync(insertCmd);
+            Assert.That(activities.Count, Is.EqualTo(1));
+            activities.Clear();
+
+            var copyToCommand = $"COPY {table} (field_text, field_int) TO STDOUT BINARY";
+            await using (var reader = async
+                ? await conn.BeginBinaryExportAsync(copyToCommand)
+                : conn.BeginBinaryExport(copyToCommand))
+            { }
+
+            Assert.That(activities.Count, Is.EqualTo(0));
+        }
+
+        // Filtered in
+        {
+            var table = await CreateTempTable(conn, "field_text TEXT, field_int2 SMALLINT");
+            Assert.That(activities.Count, Is.EqualTo(1));
+            activities.Clear();
+
+            // Insert exactly one row before export
+            var insertCmd = $"INSERT INTO {table} (field_text, field_int2) VALUES ('Hello', 8)";
+            await conn.ExecuteNonQueryAsync(insertCmd);
+            Assert.That(activities.Count, Is.EqualTo(1));
+            activities.Clear();
+
+            var copyToCommand = $"COPY {table} (field_text, field_int2) TO STDOUT BINARY";
+            await using (var reader = async
+                ? await conn.BeginBinaryExportAsync(copyToCommand)
+                : conn.BeginBinaryExport(copyToCommand))
+            { }
+
+            Assert.That(activities.Count, Is.EqualTo(1));
+            var activity = activities[0];
+            Assert.That(activity.DisplayName, Is.EqualTo("custom_binary_export"));
+            Assert.That(activity.OperationName, Is.EqualTo("custom_binary_export"));
+
+            Assert.That(activity.Events.Count(), Is.EqualTo(0));
+
+            var customTag = activity.TagObjects.First(x => x.Key == "custom_tag");
+            Assert.That(customTag.Value, Is.EqualTo("custom_value"));
+        }
+    }
+
+    [Test]
     public async Task Cancel_binary_export([Values] bool async)
     {
         if (IsMultiplexing && !async)

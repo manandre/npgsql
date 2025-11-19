@@ -566,7 +566,19 @@ public sealed class NpgsqlBinaryExporter : ICancelable
         Debug.Assert(CurrentActivity is null);
         if (NpgsqlActivitySource.IsEnabled)
         {
-            CurrentActivity = NpgsqlActivitySource.ExportStart(copyToCommand, _connector);
+            var tracingOptions = _connector.DataSource.Configuration.TracingOptions;
+            var copyOperationType = CopyOperationType.BinaryExport;
+
+            if (tracingOptions.CopyOperationFilter?.Invoke(copyToCommand, copyOperationType) ?? true)
+            {
+                var spanName = tracingOptions.CopyOperationSpanNameProvider?.Invoke(copyToCommand, copyOperationType);
+                CurrentActivity = NpgsqlActivitySource.ExportStart(copyToCommand, _connector, spanName);
+
+                if (CurrentActivity != null)
+                {
+                    tracingOptions.CopyOperationEnrichmentCallback?.Invoke(CurrentActivity, copyToCommand, copyOperationType);
+                }
+            }
         }
     }
 

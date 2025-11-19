@@ -145,10 +145,10 @@ static class NpgsqlActivitySource
         activity.Dispose();
     }
 
-    private static Activity? CopyStart(string command, NpgsqlConnector connector, string operation)
+    private static Activity? CopyStart(string command, NpgsqlConnector connector, string? spanName, string operation)
     {
         var dbName = connector.Settings.Database ?? "UNKNOWN";
-        var activity = Source.StartActivity(dbName, ActivityKind.Client);
+        var activity = Source.StartActivity(spanName ?? dbName, ActivityKind.Client);
         if (activity is not { IsAllDataRequested: true })
             return activity;
         activity.SetTag("db.statement", command);
@@ -157,11 +157,11 @@ static class NpgsqlActivitySource
         return activity;
     }
 
-    internal static Activity? ImportStart(string copyFromCommand, NpgsqlConnector connector)
-        => CopyStart(copyFromCommand, connector, "COPY FROM");
+    internal static Activity? ImportStart(string copyFromCommand, NpgsqlConnector connector, string? spanName)
+        => CopyStart(copyFromCommand, connector, spanName, "COPY FROM");
 
-    internal static Activity? ExportStart(string copyToCommand, NpgsqlConnector connector)
-        => CopyStart(copyToCommand, connector, "COPY TO");
+    internal static Activity? ExportStart(string copyToCommand, NpgsqlConnector connector, string? spanName)
+        => CopyStart(copyToCommand, connector, spanName, "COPY TO");
 
     private static void CopyStop(Activity activity, ulong rows)
     {
