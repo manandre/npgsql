@@ -502,7 +502,19 @@ public sealed class NpgsqlRawCopyStream : Stream, ICancelable
         Debug.Assert(_copyActivity is null);
         if (NpgsqlActivitySource.IsEnabled)
         {
-            _copyActivity = NpgsqlActivitySource.CopyStart(copyCommand, _connector);
+            var tracingOptions = _connector.DataSource.Configuration.TracingOptions;
+            var copyOperationType = CopyOperationType.RawBinary;
+
+            if (tracingOptions.CopyOperationFilter?.Invoke(copyCommand, copyOperationType) ?? true)
+            {
+                var spanName = tracingOptions.CopyOperationSpanNameProvider?.Invoke(copyCommand, copyOperationType);
+                _copyActivity = NpgsqlActivitySource.CopyStart(copyCommand, _connector, spanName);
+
+                if (_copyActivity != null)
+                {
+                    tracingOptions.CopyOperationEnrichmentCallback?.Invoke(_copyActivity, copyCommand, copyOperationType);
+                }
+            }
         }
     }
 

@@ -145,7 +145,7 @@ static class NpgsqlActivitySource
         activity.Dispose();
     }
 
-    internal static Activity? CopyStart(string command, NpgsqlConnector connector, string? operation = null)
+    internal static Activity? CopyStart(string command, NpgsqlConnector connector, string? spanName, string? operation = null)
     {
         var dbName = connector.Settings.Database ?? "UNKNOWN";
         var activity = Source.StartActivity(spanName ?? dbName, ActivityKind.Client);
