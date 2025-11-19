@@ -424,6 +424,84 @@ public class TracingTests(MultiplexingMode multiplexingMode) : MultiplexingTestB
     }
 
     [Test]
+    public async Task Configure_tracing_binary_import([Values] bool async)
+    {
+        if (IsMultiplexing && !async)
+            return;
+
+        var activities = new List<Activity>();
+
+        using var activityListener = new ActivityListener();
+        activityListener.ShouldListenTo = source => source.Name == "Npgsql";
+        activityListener.Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded;
+        activityListener.ActivityStopped = activity => activities.Add(activity);
+        ActivitySource.AddActivityListener(activityListener);
+
+        await using var dataSource = CreateDataSource(builder =>
+        {
+            DisablePhysicalOpenTracing(builder);
+            builder.ConfigureTracing(options =>
+            {
+                options
+                    .ConfigureCopyOperationFilter((command, type) => type == CopyOperationType.BinaryImport && command.Contains("int2"))
+                    .ConfigureCopyOperationSpanNameProvider((_, type) => type == CopyOperationType.BinaryImport ? "custom_binary_import" : null)
+                    .ConfigureCopyOperationEnrichmentCallback((activity, _, type) =>
+                    {
+                        if (type == CopyOperationType.BinaryImport) {
+                            activity.AddTag("custom_tag", "custom_value");
+                        }
+                    });
+            });
+        });
+
+        await using var conn = await dataSource.OpenConnectionAsync();
+
+        // Filtered out
+        {
+            var table = await CreateTempTable(conn, "field_text TEXT, field_int SMALLINT");
+
+            // We're not interested in temp table creation's activity
+            Assert.That(activities.Count, Is.EqualTo(1));
+            activities.Clear();
+
+            var copyFromCommand = $"COPY {table} (field_text, field_int) FROM STDIN BINARY";
+
+            await using (var writer = async
+                ? await conn.BeginBinaryImportAsync(copyFromCommand)
+                : conn.BeginBinaryImport(copyFromCommand))
+            { }
+
+            Assert.That(activities.Count, Is.EqualTo(0));
+        }
+
+        // Filtered in
+        {
+            var table = await CreateTempTable(conn, "field_text TEXT, field_int2 SMALLINT");
+
+            // We're not interested in temp table creation's activity
+            Assert.That(activities.Count, Is.EqualTo(1));
+            activities.Clear();
+
+            var copyFromCommand = $"COPY {table} (field_text, field_int2) FROM STDIN BINARY";
+
+            await using (var writer = async
+                ? await conn.BeginBinaryImportAsync(copyFromCommand)
+                : conn.BeginBinaryImport(copyFromCommand))
+            { }
+
+            Assert.That(activities.Count, Is.EqualTo(1));
+            var activity = activities[0];
+            Assert.That(activity.DisplayName, Is.EqualTo("custom_binary_import"));
+            Assert.That(activity.OperationName, Is.EqualTo("custom_binary_import"));
+
+            Assert.That(activity.Events.Count(), Is.EqualTo(0));
+
+            var customTag = activity.TagObjects.First(x => x.Key == "custom_tag");
+            Assert.That(customTag.Value, Is.EqualTo("custom_value"));
+        }
+    }
+
+    [Test]
     public async Task Cancel_binary_import([Values] bool async)
     {
         if (IsMultiplexing && !async)
