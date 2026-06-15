@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using NpgsqlTypes;
 
@@ -37,6 +38,18 @@ public class CopyImport
                 for (var col = 0; col < 10; col++)
                     importer.Write(col, NpgsqlDbType.Integer);
             }
+        }
+    }
+
+    [Benchmark]
+    public async Task ImportAsync()
+    {
+        await using var importer = await _conn.BeginBinaryImportAsync("COPY data FROM STDIN (FORMAT BINARY)");
+        for (var row = 0; row < Rows; row++)
+        {
+            await importer.StartRowAsync();
+            for (var col = 0; col < 10; col++)
+                await importer.WriteAsync(col, NpgsqlDbType.Integer);
         }
     }
 }

@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 
 // ReSharper disable UnusedMember.Global
@@ -90,6 +91,23 @@ INSERT INTO table{i} (id, data) VALUES (1, {i});
 
     [Benchmark]
     public object Prepared() => _preparedCmd.ExecuteScalar()!;
+
+    [Benchmark]
+    public async Task<object> UnpreparedAsync()
+    {
+        using var cmd = new NpgsqlCommand(_query, _conn);
+        return (await cmd.ExecuteScalarAsync())!;
+    }
+
+    [Benchmark]
+    public async Task<object> AutoPreparedAsync()
+    {
+        using var cmd = new NpgsqlCommand(_query, _autoPreparingConn);
+        return (await cmd.ExecuteScalarAsync())!;
+    }
+
+    [Benchmark]
+    public Task<object?> PreparedAsync() => _preparedCmd.ExecuteScalarAsync();
 
     static Prepare()
     {

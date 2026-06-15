@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 
 namespace Npgsql.Benchmarks;
@@ -41,6 +42,20 @@ public class ReadColumns
                 for (var i = 0; i < NumColumns; i++)
                     x += reader.GetInt32(i);
             }
+            return x;
+        }
+    }
+
+    [Benchmark]
+    public async Task<int> IntColumnAsync()
+    {
+        unchecked
+        {
+            var x = 0;
+            await using var reader = await _cmd.ExecuteReaderAsync();
+            await reader.ReadAsync();
+            for (var i = 0; i < NumColumns; i++)
+                x += reader.GetInt32(i);
             return x;
         }
     }
