@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using Microsoft.Data.SqlClient;
 
@@ -161,5 +162,61 @@ public class ConnectionOpenCloseBenchmarks
         for (var i = 0; i < StatementsToSend; i++)
             _nonPooledCmd.ExecuteNonQuery();
         _nonPooledConnection.Close();
+    }
+
+    [Benchmark]
+    public async Task NoOpenCloseAsync()
+    {
+        for (var i = 0; i < StatementsToSend; i++)
+            await _noOpenCloseCmd.ExecuteNonQueryAsync();
+    }
+
+    [Benchmark]
+    public async Task OpenCloseAsync()
+    {
+        await using var conn = new NpgsqlConnection(_openCloseConnString);
+        await conn.OpenAsync();
+        _openCloseCmd.Connection = conn;
+        for (var i = 0; i < StatementsToSend; i++)
+            await _openCloseCmd.ExecuteNonQueryAsync();
+    }
+
+    [Benchmark]
+    public async Task OpenCloseSameConnectionAsync()
+    {
+        await _openCloseSameConn.OpenAsync();
+        for (var i = 0; i < StatementsToSend; i++)
+            await _openCloseSameCmd.ExecuteNonQueryAsync();
+        await _openCloseSameConn.CloseAsync();
+    }
+
+    /// <summary>
+    /// Having prepared statements alters the connection reset when closing.
+    /// </summary>
+    [Benchmark]
+    public async Task WithPreparedAsync()
+    {
+        await _connWithPrepared.OpenAsync();
+        for (var i = 0; i < StatementsToSend; i++)
+            await _withPreparedCmd.ExecuteNonQueryAsync();
+        await _connWithPrepared.CloseAsync();
+    }
+
+    [Benchmark]
+    public async Task NoResetOnCloseAsync()
+    {
+        await _noResetConn.OpenAsync();
+        for (var i = 0; i < StatementsToSend; i++)
+            await _noResetCmd.ExecuteNonQueryAsync();
+        await _noResetConn.CloseAsync();
+    }
+
+    [Benchmark]
+    public async Task NonPooledAsync()
+    {
+        await _nonPooledConnection.OpenAsync();
+        for (var i = 0; i < StatementsToSend; i++)
+            await _nonPooledCmd.ExecuteNonQueryAsync();
+        await _nonPooledConnection.CloseAsync();
     }
 }

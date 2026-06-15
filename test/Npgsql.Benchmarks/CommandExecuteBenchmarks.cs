@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 
 // ReSharper disable UnusedMember.Global
@@ -52,5 +53,25 @@ public class CommandExecuteBenchmarks
             reader.Read();
             return reader.GetValue(0);
         }
+    }
+
+    [Benchmark]
+    public Task<int> ExecuteNonQueryAsync() => _executeNonQueryCmd.ExecuteNonQueryAsync();
+
+    [Benchmark]
+    public Task<int> ExecuteNonQueryWithParamAsync() => _executeNonQueryWithParamCmd.ExecuteNonQueryAsync();
+
+    [Benchmark]
+    public Task<int> ExecuteNonQueryPreparedAsync() => _executeNonQueryPreparedCmd.ExecuteNonQueryAsync();
+
+    [Benchmark]
+    public Task<object?> ExecuteScalarAsync() => _executeScalarCmd.ExecuteScalarAsync();
+
+    [Benchmark]
+    public async Task<object> ExecuteReaderAsync()
+    {
+        await using var reader = await _executeReaderCmd.ExecuteReaderAsync();
+        await reader.ReadAsync();
+        return reader.GetValue(0);
     }
 }

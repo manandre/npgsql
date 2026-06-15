@@ -1,4 +1,5 @@
 using System.Text;
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using NpgsqlTypes;
 
@@ -84,5 +85,60 @@ public class Insert
             }
         }
         _truncateCmd.ExecuteNonQuery();
+    }
+
+    [Benchmark]
+    public async Task UnbatchedAsync()
+    {
+        var cmd = new NpgsqlCommand("INSERT INTO data VALUES (@p0, @p1, @p2, @p3)", _conn);
+        cmd.Parameters.AddWithValue("p0", NpgsqlDbType.Integer, 8);
+        cmd.Parameters.AddWithValue("p1", NpgsqlDbType.Text, "foo");
+        cmd.Parameters.AddWithValue("p2", NpgsqlDbType.Integer, 9);
+        cmd.Parameters.AddWithValue("p3", NpgsqlDbType.Text, "bar");
+        await cmd.PrepareAsync();
+
+        for (var i = 0; i < BatchSize; i++)
+            await cmd.ExecuteNonQueryAsync();
+        await _truncateCmd.ExecuteNonQueryAsync();
+    }
+
+    [Benchmark]
+    public async Task BatchedAsync()
+    {
+        var cmd = new NpgsqlCommand { Connection = _conn };
+        var sb = new StringBuilder();
+        for (var i = 0; i < BatchSize; i++)
+        {
+            var p1 = (i * 4).ToString();
+            var p2 = (i * 4 + 1).ToString();
+            var p3 = (i * 4 + 2).ToString();
+            var p4 = (i * 4 + 3).ToString();
+            sb.Append("INSERT INTO data VALUES (@").Append(p1).Append(", @").Append(p2).Append(", @").Append(p3).Append(", @").Append(p4).Append(");");
+            cmd.Parameters.AddWithValue(p1, NpgsqlDbType.Integer, 8);
+            cmd.Parameters.AddWithValue(p2, NpgsqlDbType.Text, "foo");
+            cmd.Parameters.AddWithValue(p3, NpgsqlDbType.Integer, 9);
+            cmd.Parameters.AddWithValue(p4, NpgsqlDbType.Text, "bar");
+        }
+        cmd.CommandText = sb.ToString();
+        await cmd.PrepareAsync();
+        await cmd.ExecuteNonQueryAsync();
+        await _truncateCmd.ExecuteNonQueryAsync();
+    }
+
+    [Benchmark]
+    public async Task CopyAsync()
+    {
+        await using (var s = await _conn.BeginBinaryImportAsync("COPY data (int1, text1, int2, text2) FROM STDIN BINARY"))
+        {
+            for (var i = 0; i < BatchSize; i++)
+            {
+                await s.StartRowAsync();
+                await s.WriteAsync(8);
+                await s.WriteAsync("foo");
+                await s.WriteAsync(9);
+                await s.WriteAsync("bar");
+            }
+        }
+        await _truncateCmd.ExecuteNonQueryAsync();
     }
 }

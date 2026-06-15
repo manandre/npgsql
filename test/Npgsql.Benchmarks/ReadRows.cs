@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 
 namespace Npgsql.Benchmarks;
@@ -26,5 +27,12 @@ public class ReadRows
     {
         using (var reader = Command.ExecuteReader())
             while (reader.Read()) { }
+    }
+
+    [Benchmark]
+    public async Task ReadAsync()
+    {
+        await using var reader = await Command.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) { }
     }
 }

@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using NpgsqlTypes;
 
@@ -33,6 +34,20 @@ public class CopyExport
                 while (exporter.StartRow() != -1)
                     for (var col = 0; col < 10; col++)
                         sum += exporter.Read<int>(NpgsqlDbType.Integer);
+        }
+        return sum;
+    }
+
+    [Benchmark]
+    public async Task<int> ExportAsync()
+    {
+        var sum = 0;
+        unchecked
+        {
+            await using var exporter = await _conn.BeginBinaryExportAsync("COPY data TO STDOUT (FORMAT BINARY)");
+            while (await exporter.StartRowAsync() != -1)
+                for (var col = 0; col < 10; col++)
+                    sum += await exporter.ReadAsync<int>(NpgsqlDbType.Integer);
         }
         return sum;
     }

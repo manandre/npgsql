@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 
 // ReSharper disable AssignNullToNotNullAttribute.Global
@@ -25,5 +26,13 @@ public class Commit
         var tx = _conn.BeginTransaction();
         _cmd.ExecuteNonQuery();
         tx.Commit();
+    }
+
+    [Benchmark]
+    public async Task BasicAsync()
+    {
+        await using var tx = await _conn.BeginTransactionAsync();
+        await _cmd.ExecuteNonQueryAsync();
+        await tx.CommitAsync();
     }
 }

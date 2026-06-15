@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using NpgsqlTypes;
 
@@ -44,5 +45,13 @@ public class WriteVaryingNumberOfParameters
         for (var i = 0; i < NumParams; i++)
             _cmd.Parameters[i].Value = i;
         _cmd.ExecuteNonQuery();
+    }
+
+    [Benchmark]
+    public async Task WriteParametersAsync()
+    {
+        for (var i = 0; i < NumParams; i++)
+            _cmd.Parameters[i].Value = i;
+        await _cmd.ExecuteNonQueryAsync();
     }
 }
